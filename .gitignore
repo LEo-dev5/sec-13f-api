@@ -1,0 +1,8 @@
+# .gitignore 내용
+.env
+.env.local
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.db

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Easy 13F Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg w-96 text-center">
+        <h1 class="text-2xl font-bold mb-2">관리자 모드 🔒</h1>
+        <p class="text-gray-500 mb-6">데이터베이스 업데이트 관리</p>
+
+        <div id="status" class="hidden mb-4 p-3 bg-blue-50 text-blue-600 rounded text-sm">
+            대기 중...
+        </div>
+
+        <button id="updateAllBtn" onclick="triggerUpdateAll()" 
+                class="w-full bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800 transition">
+            SEC 데이터 전체 최신화 (Update All) 🚀
+        </button>
+
+        <p class="text-xs text-gray-400 mt-4">
+            * 버튼을 누르면 서버가 백그라운드에서<br>데이터를 수집하고 저장합니다.
+        </p>
+    </div>
+
+        <script>
+        async function triggerUpdateAll() {
+            if(!confirm("시간이 오래 걸리는 작업입니다. (약 10~20분)\n터미널 로그를 보며 기다려주세요.\n계속하시겠습니까?")) return;
+
+            // [수정] id로 정확하게 찾기!
+            const btn = document.getElementById("updateAllBtn"); 
+            const status = document.getElementById("status");
+            
+            // btn이 잘 찾아졌는지 확인 (안전장치)
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add("opacity-50", "cursor-not-allowed");
+            }
+
+            status.innerText = "⏳ 전체 수집 중... (터미널 로그 확인)";
+            status.classList.remove("hidden");
+            status.className = "mb-4 p-3 bg-yellow-50 text-yellow-600 rounded text-sm";
+
+            try {
+                // [중요] 주소 뒤에 _all 확인
+                const response = await fetch("/api/v1/admin/update_db_all", { method: "POST" });
+                const result = await response.json();
+                
+                alert("작업이 시작되었습니다! 완료될 때까지 서버를 끄지 마세요.");
+            } catch (error) {
+                status.innerText = "❌ 오류: " + error;
+                status.className = "mb-4 p-3 bg-red-50 text-red-600 rounded text-sm";
+                if (btn) btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

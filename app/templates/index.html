@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy 13F - 월스트리트 따라하기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>
+        body { font-family: "Pretendard Variable", Pretendard, sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+
+    <section class="flex flex-col items-center justify-center pt-20 pb-12 px-6 text-center">
+        <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 leading-tight">
+            월스트리트의 거인들은<br>
+            지금 <span class="text-blue-600">무엇을 샀을까요?</span> 🧐
+        </h1>
+        <p class="text-lg text-gray-500 mb-10 max-w-2xl">
+            워렌 버핏, 마이클 버리 등 전설적인 투자자들의<br class="md:hidden"> 
+            최신 포트폴리오를 0.1초 만에 확인하세요.
+        </p>
+
+        <div class="w-full max-w-2xl relative">
+            <form action="/search" method="get" class="relative">
+                <input type="text" name="q" 
+                    class="w-full py-4 pl-6 pr-14 rounded-full border border-gray-200 shadow-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition placeholder-gray-400"
+                    placeholder="기관명 혹은 종목(티커) 검색 (예: 애플, 버크셔)" required>
+                <button type="submit" class="absolute right-3 top-3 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </button>
+            </form>
+        </div>
+    </section>
+
+    <section class="max-w-6xl mx-auto px-6 pb-24">
+        <div class="flex items-center gap-2 mb-8">
+            <span class="text-2xl">🔥</span>
+            <h2 class="text-2xl font-bold text-gray-900">지금 가장 핫한 투자자</h2>
+        </div>
+
+        {% if gurus %}
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {% for item in gurus %}
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition flex flex-col items-center cursor-pointer group"
+                 onclick="location.href='/api/v1/sec/dashboard/{{ item.cik }}'">
+                
+                <div class="text-center mb-6">
+                    <h3 class="text-xl font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition">{{ item.name }}</h3>
+                    <p class="text-sm text-gray-500 font-medium">
+                        운용 자산: <span class="text-blue-600">${{ "{:,}".format(item.total_assets * 1000) }}</span>
+                    </p>
+                </div>
+
+                <div class="relative w-48 h-48 mb-4">
+                    <canvas id="chart-{{ loop.index }}"></canvas>
+                </div>
+                
+                <p class="text-xs text-gray-400 mt-2 font-bold group-hover:text-blue-500 transition">클릭하여 포트폴리오 보기 ➜</p>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
+            <p class="text-gray-400 text-lg">아직 등록된 Guru 데이터가 없습니다.</p>
+            <p class="text-sm text-gray-300 mt-2">관리자 페이지에서 [Update All]을 진행해주세요.</p>
+        </div>
+        {% endif %}
+    </section>
+
+    <footer class="text-center py-8 text-gray-400 text-sm border-t border-gray-100 mt-10">
+        &copy; 2026 Easy 13F Analyzer. All rights reserved.
+    </footer>
+
+    <script id="guru-data" type="application/json">
+        {{ gurus | tojson | safe }}
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 1. 숨겨둔 데이터를 꺼내옵니다.
+            const rawData = document.getElementById('guru-data').textContent;
+            
+            // 2. 텍스트를 진짜 자바스크립트 객체로 변환합니다.
+            const guruData = JSON.parse(rawData);
+
+            // 3. 차트 그리기 (이제 에러 없음!)
+            guruData.forEach((item, index) => {
+                const ctx = document.getElementById('chart-' + (index + 1));
+                
+                if (ctx) {
+                    new Chart(ctx, {
+                        type: 'doughnut',
+                        data: {
+                            labels: item.labels,
+                            datasets: [{
+                                data: item.data,
+                                backgroundColor: [
+                                    '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE', '#DBEAFE', '#E5E7EB'
+                                ],
+                                hoverOffset: 4,
+                                borderWidth: 0
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: function(context) {
+                                            return ' ' + context.label + ': ' + context.raw + '%';
+                                        }
+                                    },
+                                    backgroundColor: 'rgba(0,0,0,0.8)',
+                                    padding: 10,
+                                    cornerRadius: 8,
+                                }
+                            },
+                            cutout: '70%',
+                            animation: { animateScale: true, animateRotate: true }
+                        }
+                    });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
