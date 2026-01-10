@@ -26,10 +26,19 @@
             <div class="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold mb-3">
                 기관 투자자
             </div>
-            <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight">
-                {{ institution_name }}
-            </h1>
-            <p class="text-gray-400 mt-2 font-medium">CIK: {{ cik }}</p>
+            
+        <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight mb-2">
+            {{ institution_name }}  </h1>
+            
+            <p class="text-gray-400 font-medium mb-6">CIK: {{ cik }}</p>
+
+            {% if description %}
+            <div class="bg-gray-100 p-4 rounded-lg border-l-4 border-gray-400 text-gray-600 text-sm leading-relaxed max-w-3xl">
+                <span class="font-bold text-gray-800">🏢 Company Profile:</span> 
+                {{ description }}
+                <span class="text-xs text-gray-400 block mt-2">(Source: Wikipedia & AI Translation)</span>
+            </div>
+            {% endif %}
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
@@ -129,7 +138,7 @@
     </main>
 
     <script>
-        // 1. 차트 그리기 로직
+        // 1. 차트 그리기
         document.addEventListener("DOMContentLoaded", function() {
             const holdingsRaw = {{ holdings | tojson | safe }}; 
             
@@ -170,28 +179,25 @@
                         },
                         cutout: '65%',
                     }
-                });
+                }); 
             }
         });
 
-        // 2. 🚨 [중요] AI 분석 불러오기 로직 (이게 없어서 로딩만 떴던 겁니다!)
+        // 2. AI 분석 불러오기
         document.addEventListener("DOMContentLoaded", function() {
             const cik = "{{ cik }}"; 
             const contentDiv = document.getElementById("ai-content");
 
-            // API 호출 (Lazy Loading)
             fetch(`/api/v1/sec/dashboard/${cik}/ai-analysis`)
                 .then(response => response.json())
                 .then(data => {
                     contentDiv.innerHTML = data.analysis;
-                    // 내용이 들어오면 정렬 스타일 변경
                     contentDiv.classList.remove("items-center", "justify-center");
                 })
                 .catch(err => {
                     contentDiv.innerHTML = `
                         <div class="text-center text-red-400 text-sm">
-                            <p>분석을 불러오는데 실패했습니다.</p>
-                            <button onclick="location.reload()" class="mt-2 px-3 py-1 bg-gray-100 rounded text-xs hover:bg-gray-200">🔄 재시도</button>
+                            <p>분석 실패. 새로고침 해주세요.</p>
                         </div>
                     `;
                 });

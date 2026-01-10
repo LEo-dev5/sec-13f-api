@@ -10,6 +10,7 @@ class Institution(Base):
     cik = Column(String, unique=True, index=True)
     is_featured = Column(Boolean, default=False)
     ai_summary = Column(Text, nullable=True)
+    description = Column(Text, nullable=True)
     holdings = relationship("Holding", back_populates="owner", cascade="all, delete-orphan")
 
 class Holding(Base):
