@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ institution_name }} - Easy 13F</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
@@ -10,123 +11,132 @@
 </head>
 <body class="bg-gray-50 text-gray-800">
 
-    <header class="bg-white border-b border-gray-100 py-4 px-6 sticky top-0 z-20 shadow-sm">
-        <div class="max-w-5xl mx-auto flex items-center gap-4">
-            <a href="/" class="text-xl font-bold hover:text-blue-500 transition flex items-center gap-2">
-                Easy 13F 🏠
-            </a>
-            <span class="text-gray-300">|</span>
-            <div class="text-sm text-gray-500">{{ report_date }} 기준</div>
+    <header class="bg-white border-b border-gray-100 py-3 px-4 md:py-4 md:px-6 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-5xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <a href="/" class="text-lg md:text-xl font-bold hover:text-blue-500 transition flex items-center gap-1">
+                    Easy 13F 🏠
+                </a>
+                <span class="text-gray-300">|</span>
+            </div>
+            <div class="text-xs md:text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
+                {{ report_date }} 기준
+            </div>
         </div>
     </header>
 
-    <main class="max-w-5xl mx-auto px-6 py-12">
+    <main class="max-w-5xl mx-auto px-4 py-8 md:px-6 md:py-12">
         
-        <div class="mb-10">
+        <div class="mb-8 md:mb-10">
             <div class="inline-block px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold mb-3">
                 기관 투자자
             </div>
             
-        <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 leading-tight mb-2">
-            {{ institution_name }}  </h1>
+            <h1 class="text-3xl md:text-5xl font-extrabold text-gray-900 leading-tight mb-2 break-keep">
+                {{ institution_name }}
+            </h1>
             
-            <p class="text-gray-400 font-medium mb-6">CIK: {{ cik }}</p>
+            <p class="text-gray-400 font-medium mb-6 text-sm md:text-base">CIK: {{ cik }}</p>
 
-            {% if description %}
-            <div class="bg-gray-100 p-4 rounded-lg border-l-4 border-gray-400 text-gray-600 text-sm leading-relaxed max-w-3xl">
-                <span class="font-bold text-gray-800">🏢 Company Profile:</span> 
-                {{ description }}
-                <span class="text-xs text-gray-400 block mt-2">(Source: Wikipedia & AI Translation)</span>
-            </div>
-            {% endif %}
-        </div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-12">
-            
-            <div class="lg:col-span-2 bg-gradient-to-br from-white to-blue-50 rounded-2xl p-8 shadow-sm border border-blue-100 relative overflow-hidden">
-                <div class="absolute top-0 right-0 w-32 h-32 bg-blue-100 rounded-full blur-3xl opacity-50 -mr-10 -mt-10"></div>
+            <div class="bg-gray-100 p-4 rounded-lg border-l-4 border-gray-400 text-gray-600 text-sm leading-relaxed max-w-3xl shadow-sm">
+                <span class="font-bold text-gray-800 block mb-1">🏢 Company Profile</span> 
                 
-                <h2 class="text-lg font-bold flex items-center gap-2 mb-4 relative z-10 text-gray-800">
-                    🤖 AI 애널리스트의 분석
-                </h2>
-                
-                <div id="ai-content" class="prose prose-sm text-gray-700 bg-white/60 p-6 rounded-xl border border-blue-50/50 backdrop-blur-sm relative z-10 leading-relaxed min-h-[160px] flex items-center justify-center">
-                    <div class="flex flex-col items-center animate-pulse text-blue-400">
-                        <svg class="w-8 h-8 mb-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                {% if description %}
+                    {{ description }}
+                    <span class="text-xs text-gray-400 block mt-2">(Source: Wikipedia & AI Translation)</span>
+                {% else %}
+                    <div class="flex items-center gap-2 text-gray-500 py-2">
+                        <svg class="animate-spin h-5 w-5 text-gray-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
                         </svg>
-                        <span class="text-sm font-medium">AI가 포트폴리오를 분석 중입니다...</span>
+                        <span>기업 정보를 불러오는 중입니다... (잠시 후 새로고침 해주세요)</span>
+                    </div>
+                {% endif %}
+            </div>
+
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+            <div class="lg:col-span-2 bg-gradient-to-br from-white to-blue-50 rounded-2xl p-6 md:p-8 shadow-sm border border-blue-100 relative overflow-hidden order-2 lg:order-1">
+                <div class="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-blue-100 rounded-full blur-3xl opacity-50 -mr-10 -mt-10"></div>
+                <h2 class="text-base md:text-lg font-bold flex items-center gap-2 mb-4 relative z-10 text-gray-800">
+                    🤖 AI 애널리스트의 분석
+                </h2>
+                <div id="ai-content" class="prose prose-sm text-gray-700 bg-white/80 p-5 rounded-xl border border-blue-50 backdrop-blur-sm relative z-10 leading-relaxed min-h-[140px] flex items-center justify-center">
+                    <div class="flex flex-col items-center animate-pulse text-blue-400">
+                        <svg class="w-6 h-6 mb-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span class="text-xs md:text-sm font-medium">분석 중...</span>
                     </div>
                 </div>
             </div>
 
-            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-center items-center">
-                <h3 class="text-sm font-bold text-gray-500 mb-4 w-full text-left tracking-wide uppercase">
+            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 flex flex-col justify-center items-center order-1 lg:order-2">
+                <h3 class="text-xs font-bold text-gray-500 mb-4 w-full text-left tracking-wide uppercase">
                     📊 Portfolio Top 5
                 </h3>
                 <div class="relative w-full h-48 sm:h-56">
                     <canvas id="portfolioChart"></canvas>
                 </div>
             </div>
-
         </div>      
 
-        <h3 class="text-2xl font-bold mb-6 flex items-center gap-2">
+        <h3 class="text-xl md:text-2xl font-bold mb-4 md:mb-6 flex items-center gap-2">
             포트폴리오 Top 100 🔥
         </h3>
         
-        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-            <table class="w-full text-left border-collapse">
-                <thead class="bg-gray-50 text-xs text-gray-500 uppercase border-b border-gray-100">
-                    <tr>
-                        <th class="px-6 py-4 font-bold">종목명 (Ticker)</th>
-                        <th class="px-6 py-4 text-right font-bold">평가액 (USD)</th>
-                        <th class="px-6 py-4 text-right font-bold">보유량 변동률</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100 text-sm">
-                    {% for stock in holdings %}
-                    <tr class="hover:bg-blue-50 transition group">
-                        <td class="px-6 py-5">
-                            <div class="flex flex-col">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-base font-bold text-gray-900 group-hover:text-blue-600 transition">
-                                        {{ stock.display_name }}
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[600px]">
+                    <thead class="bg-gray-50 text-xs text-gray-500 uppercase border-b border-gray-100">
+                        <tr>
+                            <th class="px-4 py-3 md:px-6 md:py-4 font-bold whitespace-nowrap">종목명 (Ticker)</th>
+                            <th class="px-4 py-3 md:px-6 md:py-4 text-right font-bold whitespace-nowrap">평가액 (USD)</th>
+                            <th class="px-4 py-3 md:px-6 md:py-4 text-right font-bold whitespace-nowrap">변동률</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 text-sm">
+                        {% for stock in holdings %}
+                        <tr class="hover:bg-blue-50 transition group">
+                            <td class="px-4 py-4 md:px-6 md:py-5">
+                                <div class="flex flex-col">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm md:text-base font-bold text-gray-900 group-hover:text-blue-600 transition truncate max-w-[150px] md:max-w-none">
+                                            {{ stock.display_name }}
+                                        </span>
+                                        {% if stock.holding_type == 'Put' %}
+                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 border border-red-200">PUT</span>
+                                        {% elif stock.holding_type == 'Call' %}
+                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-600 border border-green-200">CALL</span>
+                                        {% endif %}
+                                    </div>
+                                    <span class="text-xs text-gray-400 mt-0.5">
+                                        {{ stock.ticker if stock.ticker else stock.name_of_issuer }}
                                     </span>
-                                    
-                                    {% if stock.holding_type == 'Put' %}
-                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-600 border border-red-200">PUT</span>
-                                    {% elif stock.holding_type == 'Call' %}
-                                    <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-600 border border-green-200">CALL</span>
-                                    {% endif %}
                                 </div>
-                                
-                                <span class="text-sm font-bold text-gray-400 mt-0.5">
-                                    {{ stock.ticker if stock.ticker else stock.name_of_issuer }}
-                                </span>
-                            </div>
-                        </td>
-
-                        <td class="px-6 py-5 text-right font-medium text-gray-700">
-                            ${{ "{:,}".format((stock.value or 0) * 1000) }}
-                        </td>
-
-                        <td class="px-6 py-5 text-right font-bold text-base">
-                            {% if stock.change_rate is none %}
-                                <span class="text-gray-400">-</span>
-                            {% elif stock.change_rate > 0 %}
-                                <span class="text-red-500 bg-red-50 px-2 py-1 rounded">+{{ stock.change_rate }}%</span>
-                            {% elif stock.change_rate < 0 %}
-                                <span class="text-blue-500 bg-blue-50 px-2 py-1 rounded">{{ stock.change_rate }}%</span>
-                            {% else %}
-                                <span class="text-gray-400">0%</span>
-                            {% endif %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+                            </td>
+                            <td class="px-4 py-4 md:px-6 md:py-5 text-right font-medium text-gray-700 whitespace-nowrap">
+                                ${{ "{:,}".format((stock.value or 0) * 1000) }}
+                            </td>
+                            <td class="px-4 py-4 md:px-6 md:py-5 text-right font-bold text-sm md:text-base whitespace-nowrap">
+                                {% if stock.change_rate is none %}
+                                    <span class="text-gray-400">-</span>
+                                {% elif stock.change_rate > 0 %}
+                                    <span class="text-red-500 bg-red-50 px-2 py-1 rounded">+{{ stock.change_rate }}%</span>
+                                {% elif stock.change_rate < 0 %}
+                                    <span class="text-blue-500 bg-blue-50 px-2 py-1 rounded">{{ stock.change_rate }}%</span>
+                                {% else %}
+                                    <span class="text-gray-400">0%</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
         
         {% if not holdings %}
@@ -138,17 +148,14 @@
     </main>
 
     <script>
-        // 1. 차트 그리기
+        // 1. 차트
         document.addEventListener("DOMContentLoaded", function() {
             const holdingsRaw = {{ holdings | tojson | safe }}; 
-            
             if (holdingsRaw && holdingsRaw.length > 0) {
                 const top5 = holdingsRaw.slice(0, 5);
                 const labels = top5.map(item => item.display_name || item.name_of_issuer);
                 const dataValues = top5.map(item => item.value);
-
                 const ctx = document.getElementById('portfolioChart').getContext('2d');
-                
                 new Chart(ctx, {
                     type: 'doughnut',
                     data: {
@@ -168,14 +175,7 @@
                                 position: 'bottom',
                                 labels: { boxWidth: 12, padding: 15, font: { size: 11 } }
                             },
-                            tooltip: {
-                                callbacks: {
-                                    label: function(context) {
-                                        let value = context.raw;
-                                        return ' $' + value.toLocaleString(); 
-                                    }
-                                }
-                            }
+                            tooltip: { callbacks: { label: function(context) { let value = context.raw; return ' $' + value.toLocaleString(); } } }
                         },
                         cutout: '65%',
                     }
@@ -183,11 +183,10 @@
             }
         });
 
-        // 2. AI 분석 불러오기
+        // 2. AI 분석
         document.addEventListener("DOMContentLoaded", function() {
             const cik = "{{ cik }}"; 
             const contentDiv = document.getElementById("ai-content");
-
             fetch(`/api/v1/sec/dashboard/${cik}/ai-analysis`)
                 .then(response => response.json())
                 .then(data => {
@@ -195,11 +194,8 @@
                     contentDiv.classList.remove("items-center", "justify-center");
                 })
                 .catch(err => {
-                    contentDiv.innerHTML = `
-                        <div class="text-center text-red-400 text-sm">
-                            <p>분석 실패. 새로고침 해주세요.</p>
-                        </div>
-                    `;
+                    console.error("AI Error:", err);
+                    contentDiv.innerHTML = `<div class="text-center text-red-400 text-sm"><p>분석 정보를 불러올 수 없습니다.</p></div>`;
                 });
         });
     </script>

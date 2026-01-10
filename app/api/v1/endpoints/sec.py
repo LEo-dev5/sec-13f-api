@@ -1,90 +1,54 @@
 from fastapi import APIRouter, HTTPException, Request, Depends
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.db.database import get_db
 from app.db.models import Institution, Holding
 from app.services.sec_service import fetch_latest_13f
 from app.services.ai_service import analyze_portfolio_by_llm
-from app.services.wiki_service import get_company_description # 👈 [추가] 위키 서비스 임포트
-from app.services.ai_service import analyze_portfolio_by_llm, translate_wiki_to_korean 
 from app.services.wiki_service import get_company_description
 
 router = APIRouter()
 
-# 템플릿 폴더 위치 지정
 templates = Jinja2Templates(directory="app/templates")
 
 # ==========================================
-# 1. JSON API (앱 연동용 / 디버깅용)
-# ==========================================
-@router.get("/analysis/{cik}")
-async def get_ai_analysis_json(cik: str):
-    try:
-        filing_data = await fetch_latest_13f(cik)
-        
-        analysis_result = await analyze_portfolio_by_llm(
-            filing_data.holdings, 
-            filing_data.institution_name 
-        )
-        
-        return {
-            "cik": cik,
-            "institution": filing_data.institution_name,
-            "report_date": filing_data.report_date,
-            "top_holdings": filing_data.holdings[:5], 
-            "ai_analysis": analysis_result
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-# ==========================================
-# 2. 대시보드 화면 API (🚀 위키백과 즉시 로딩 적용)
+# 1. 대시보드 화면 API (회사 소개 즉시 로딩)
 # ==========================================
 @router.get("/dashboard/{cik}")
 async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db)):
-    """
-    사용자에게 보여지는 대시보드 화면입니다.
-    회사 개요(Description)는 위키백과에서 즉시 가져오고, 변동사항 분석은 AI가 Lazy Loading 합니다.
-    """
-    # 변수 초기화
     institution_name = ""
     report_date = ""
-    description_text = "" # 👈 화면에 보여줄 설명
+    description_text = ""
     display_holdings = []
     
     try:
+        # 1. DB 확인 (이름 없으면 SEC에서 복구)
         saved_inst = db.query(Institution).filter(Institution.cik == cik).first()
         
         if saved_inst:
-            print(f"✨ [DB Hit] {cik} 데이터 로딩 중...")
-            
-            # 🚨🚨 [여기부터 수정] 이름이 없을 때 자동 복구하는 핵심 코드 🚨🚨
-            if not saved_inst.name or saved_inst.name.strip() == "":
-                print(f"⚠️ 경고: {cik}의 이름이 DB에 없습니다. SEC에서 긴급 복구합니다.")
+            # [안전장치] 이름이 없으면 복구
+            if not saved_inst.name:
+                print(f"⚠️ {cik} 이름 복구 시도...")
                 try:
-                    # SEC 서버에서 다시 이름표 떼오기
                     fresh_data = await fetch_latest_13f(cik)
                     saved_inst.name = fresh_data.institution_name
-                    db.commit() # DB에 이름 저장
-                    db.refresh(saved_inst)
-                    print(f"✅ 복구 완료: {saved_inst.name}")
-                except Exception as e:
-                    print(f"❌ 복구 실패: {e}")
-                    # 실패하면 임시 이름이라도 부여
+                    db.commit()
+                except:
                     saved_inst.name = f"Institution ({cik})"
-
-            # 이제 무조건 이름이 존재함
-            institution_name = saved_inst.name
-            # -----------------------------------------------
-
-            # 날짜 처리
-            report_date = str(saved_inst.last_updated.date()) if hasattr(saved_inst, 'last_updated') and saved_inst.last_updated else "2025-09-30"
             
-            # 보유 종목 데이터 추출 (안전장치 적용)
+            institution_name = saved_inst.name
+            
+            # [설명] 회사 개요 가져오기
+            if saved_inst.description:
+                description_text = saved_inst.description
+            else:
+                # 없으면 위키백과 검색 (비동기 처리 방지 위해 일단 빈칸, 다음 로직에서 처리됨)
+                pass 
+
+            # [보유종목] 데이터 변환
             if saved_inst.holdings:
                 for h in saved_inst.holdings:
                     display_holdings.append({
-                        "name_of_issuer": getattr(h, "name", getattr(h, "name_of_issuer", "Unknown")),
                         "display_name": getattr(h, "name", getattr(h, "name_of_issuer", "Unknown")),
                         "ticker": h.ticker,
                         "value": h.value,
@@ -93,35 +57,26 @@ async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db
                         "holding_type": h.holding_type,
                     })
         else:
-            # 2. DB에 없으면 SEC 웹 크롤링
-            print(f"🌐 [SEC Web] {cik} 데이터를 SEC에서 다운로드합니다...")
+            # DB에 아예 없으면 크롤링
             filing_data = await fetch_latest_13f(cik)
-            
             institution_name = filing_data.institution_name
-            report_date = filing_data.report_date
-
-            # 온 김에 위키 검색도 같이 해서 보여줌 (저장은 다음 조회 때 DB 로직에서 처리됨)
-            description_text = get_company_description(institution_name)
-            
-            # 데이터 추출
+            # 크롤링 데이터 변환
             for h in filing_data.holdings[:100]:
                 h_dict = h.dict()
                 h_dict['display_name'] = h.name_of_issuer
-                h_dict['ticker'] = "" 
                 display_holdings.append(h_dict)
 
-        # 🚨 HTML 렌더링 (description 포함)
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "cik": cik,
             "institution_name": institution_name,
             "report_date": report_date,
             "holdings": display_holdings,
-            "description": description_text # 👈 HTML로 전달
+            "description": description_text
         })
         
     except Exception as e:
-        print(f"🔥 대시보드 에러 발생: {e}")
+        print(f"🔥 대시보드 에러: {e}")
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "cik": cik,
@@ -132,61 +87,59 @@ async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db
         })
 
 # ==========================================
-# 3. 🤖 AI 분석 전용 API (Lazy Loading용)
+# 2. 🤖 AI 분석 API (여기가 핵심!)
 # ==========================================
 @router.get("/dashboard/{cik}/ai-analysis")
 async def get_ai_analysis_endpoint(cik: str, db: Session = Depends(get_db)):
-    """
-    AI 분석 결과를 반환합니다. (DB 캐싱 적용)
-    """
     try:
+        print(f"📡 [AI 요청] {cik} 분석 시작...")
+        
         # 1. 기관 찾기
         institution = db.query(Institution).filter(Institution.cik == cik).first()
         if not institution:
-            return {"analysis": "기관 정보를 찾을 수 없습니다. (먼저 대시보드를 로딩해주세요)"}
+            return {"analysis": "기관 정보를 찾을 수 없습니다."}
 
-        # 2. 🧠 [기억력 발동] 이미 분석한 적이 있는지 확인
-        if institution.ai_summary:
-            print(f"✨ [Cache Hit] DB에서 저장된 분석글을 가져옵니다. ({institution.name})")
+        # 2. [캐시 확인] 이미 분석한 게 있으면 바로 반환
+        if institution.ai_summary and len(institution.ai_summary) > 10:
+            print(f"✨ [AI Cache] 저장된 분석글 반환")
             return {"analysis": institution.ai_summary}
 
-        # 3. [분석 시작] 데이터 준비
-        holdings_list = []
-        source_holdings = institution.holdings
-        
-        # 만약 비어있으면 직접 쿼리 (안전장치)
-        if not source_holdings:
-             from app.models import Holding
-             source_holdings = db.query(Holding).filter(Holding.institution_id == institution.id).limit(20).all()
+        # 3. [데이터 확보] 관계형 데이터가 불안정할 수 있으니 직접 쿼리 (강제 로딩)
+        # 상위 20개 종목을 가치순으로 정렬해서 가져옴
+        top_holdings = db.query(Holding)\
+            .filter(Holding.institution_id == institution.id)\
+            .order_by(Holding.value.desc())\
+            .limit(20).all()
 
-        for h in source_holdings:
+        if not top_holdings:
+            return {"analysis": "분석할 보유 종목 데이터가 없습니다."}
+
+        # 4. 데이터 포장 (AI에게 보낼 도시락 싸기)
+        holdings_list = []
+        for h in top_holdings:
+            # 안전하게 이름 가져오기
             name = getattr(h, "name", getattr(h, "name_of_issuer", "Unknown"))
-            # change_rate가 None이면 0으로 처리
-            change = h.change_rate if h.change_rate is not None else 0 
-            
+            change = h.change_rate if h.change_rate is not None else 0
             holdings_list.append({
                 "name_of_issuer": name, 
                 "value": h.value,
-                "change_rate": change # 👈 핵심 정보 추가!
+                "change_rate": change
             })
 
-        # 데이터 정제 (AI에게 보낼 포맷)
-        for h in source_holdings:
-            name = getattr(h, "name", getattr(h, "name_of_issuer", "Unknown"))
-            holdings_list.append({"name_of_issuer": name, "value": h.value})
-
-        # 4. AI 서비스 호출
-        print(f"🚀 AI 분석 요청 시작: {institution.name}")
+        # 5. AI 서비스 호출 (시간이 좀 걸림 ⏳)
+        print(f"🧠 [AI Thinking] Ollama에게 분석 요청 중... ({institution.name})")
         analysis_result = await analyze_portfolio_by_llm(holdings_list, institution.name)
 
-        # 5. 💾 [기억 저장] DB 저장
-        if "오류" not in analysis_result and len(analysis_result) > 30:
+        # 6. 결과 저장 및 반환
+        if analysis_result and "오류" not in analysis_result:
             institution.ai_summary = analysis_result
-            db.commit() # 저장 확정
-            print(f"💾 [Saved] 분석 결과를 DB에 저장했습니다.")
+            db.commit()
+            print(f"💾 [AI Saved] 분석 완료 및 저장!")
+        else:
+            print(f"⚠️ [AI Fail] 결과가 비어있거나 오류 발생")
 
         return {"analysis": analysis_result}
 
     except Exception as e:
-        print(f"🔥 AI 분석 엔드포인트 에러: {e}")
-        return {"analysis": f"분석 중 오류가 발생했습니다. ({str(e)})"}
+        print(f"🔥 AI 분석 엔드포인트 치명적 에러: {e}")
+        return {"analysis": "현재 AI 분석 서버가 응답하지 않습니다. (잠시 후 다시 시도해주세요)"}
