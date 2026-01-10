@@ -2,73 +2,81 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>{{ stock_name }} ({{ ticker }}) - 보유 기관 분석</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ ticker }} - Easy 13F</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <script>tailwind.config = { darkMode: 'class' }</script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
     <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+    <script>
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300">
 
-    <header class="bg-white border-b border-gray-100 py-4 px-6 mb-8">
+    <header class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 py-4 px-6 sticky top-0 z-30 shadow-sm">
         <div class="max-w-5xl mx-auto flex items-center gap-4">
-            <a href="/" class="text-xl font-bold hover:text-blue-500">Easy 13F 🏠</a>
-            <span class="text-gray-300">|</span>
-            <h1 class="font-bold text-lg">{{ stock_name }} <span class="text-blue-600">({{ ticker }})</span></h1>
+            <a href="/" class="text-xl font-bold hover:text-blue-500 dark:hover:text-blue-400 transition flex items-center gap-2 dark:text-white">Easy 13F 🏠</a>
         </div>
     </header>
 
-    <main class="max-w-5xl mx-auto px-6 pb-20">
+    <main class="max-w-5xl mx-auto px-6 py-12">
+        <div class="mb-10">
+            <span class="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full text-xs font-bold mb-3">Stock Analysis</span>
+            <h1 class="text-4xl font-extrabold text-gray-900 dark:text-white mb-1 uppercase">{{ ticker }}</h1>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-12">
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">보유 기관 수</div>
+                <div class="text-2xl font-extrabold text-gray-900 dark:text-white">{{ "{:,}".format(stats.count) }} <span class="text-sm font-normal text-gray-400">개</span></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">총 보유 주식 수</div>
+                <div class="text-2xl font-extrabold text-gray-900 dark:text-white truncate" title="{{ stats.total_shares }}">{{ "{:,}".format(stats.total_shares) }} <span class="text-sm font-normal text-gray-400">주</span></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">총 평가액 (기관 합산)</div>
+                <div class="text-xl md:text-2xl font-extrabold text-green-600 dark:text-green-400 break-all">
+                    ${{ "{:,}".format(stats.total_value * 1000) }}
+                </div>
+            </div>
+        </div>
+
+        <h3 class="text-xl font-bold mb-6 text-gray-900 dark:text-white flex items-center gap-2">
+            🏆 이 주식을 많이 가진 기관 Top 100
+        </h3>
         
-        <div class="bg-white rounded-2xl p-8 shadow-sm border border-gray-100 mb-8 flex flex-col md:flex-row justify-between items-center gap-6">
-            <div>
-                <h2 class="text-gray-500 text-sm font-bold mb-1">총 보유 기관 수</h2>
-                <div class="text-4xl font-bold text-gray-900">{{ stats.count }}개</div>
-            </div>
-            <div class="h-12 w-px bg-gray-200 hidden md:block"></div>
-            <div>
-                <h2 class="text-gray-500 text-sm font-bold mb-1">기관 총 보유 주식</h2>
-                <div class="text-4xl font-bold text-gray-900">{{ "{:,}".format(stats.total_shares) }} 주</div>
-            </div>
-            <div class="h-12 w-px bg-gray-200 hidden md:block"></div>
-            <div>
-                <h2 class="text-gray-500 text-sm font-bold mb-1">기관 총 평가액</h2>
-                <div class="text-4xl font-bold text-blue-600">${{ "{:,}".format(stats.total_value * 1000) }}</div>
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[500px]">
+                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs text-gray-500 dark:text-gray-400 uppercase border-b border-gray-100 dark:border-gray-600">
+                        <tr>
+                            <th class="px-6 py-4 font-bold">기관명</th>
+                            <th class="px-6 py-4 text-right font-bold">보유 주식 수</th>
+                            <th class="px-6 py-4 text-right font-bold">평가액</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700 text-sm">
+                        {% for h in holdings %}
+                        <tr class="hover:bg-blue-50 dark:hover:bg-gray-700 transition">
+                            <td class="px-6 py-4 font-bold text-gray-900 dark:text-gray-100">
+                                <a href="/api/v1/sec/dashboard/{{ h.cik }}" class="hover:text-blue-500 dark:hover:text-blue-400 block truncate max-w-[200px] md:max-w-none">
+                                    {{ h.name }}
+                                </a>
+                            </td>
+                            <td class="px-6 py-4 text-right text-gray-700 dark:text-gray-300">{{ "{:,}".format(h.shares) }}</td>
+                            <td class="px-6 py-4 text-right font-bold text-gray-900 dark:text-white">${{ "{:,}".format(h.value * 1000) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
         </div>
-
-        <h3 class="text-xl font-bold mb-4">🏆 보유량 순위 Top 100</h3>
-        <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-            <table class="w-full text-left">
-                <thead class="bg-gray-50 text-xs text-gray-500 uppercase border-b border-gray-100">
-                    <tr>
-                        <th class="px-6 py-4">순위</th>
-                        <th class="px-6 py-4">기관명 (Institution)</th>
-                        <th class="px-6 py-4 text-right">보유 주식수</th>
-                        <th class="px-6 py-4 text-right">평가 가치 ($)</th>
-                        <th class="px-6 py-4 text-right">최근 변동률</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-100 text-sm">
-                    {% for h in holdings %}
-                    <tr class="hover:bg-blue-50 transition cursor-pointer" onclick="location.href='/api/v1/sec/dashboard/{{ h.owner.cik }}'">
-                        <td class="px-6 py-4 font-bold text-gray-400">{{ loop.index }}</td>
-                        <td class="px-6 py-4">
-                            <div class="font-bold text-gray-900">{{ h.owner.name }}</div>
-                            {% if h.owner.is_featured %}
-                            <span class="inline-block bg-blue-100 text-blue-600 text-[10px] px-1.5 py-0.5 rounded font-bold mt-1">GURU</span>
-                            {% endif %}
-                        </td>
-                        <td class="px-6 py-4 text-right font-medium">{{ "{:,}".format(h.shares) }}</td>
-                        <td class="px-6 py-4 text-right text-gray-600">${{ "{:,}".format(h.value * 1000) }}</td>
-                        <td class="px-6 py-4 text-right font-bold {{ 'text-red-500' if h.change_rate > 0 else 'text-blue-500' if h.change_rate < 0 else 'text-gray-400' }}">
-                            {{ "%+d"|format(h.change_rate|int) }}%
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
     </main>
 </body>
 </html>

@@ -1,5 +1,6 @@
 # app/db/models.py
-from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Text, Boolean
+from sqlalchemy import Column, Integer, String, Date, Float, ForeignKey, Text, Boolean, DateTime
+from datetime import datetime
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -29,3 +30,18 @@ class Holding(Base):
     change_rate = Column(Float)
     
     owner = relationship("Institution", back_populates="holdings")
+
+class Insight(Base):
+    __tablename__ = "insights"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String, index=True)       # 카드 뉴스 제목 (검색용/Alt 텍스트)
+    image_url = Column(String)               # 이미지 파일 경로 (예: /static/uploads/card1.jpg)
+    created_at = Column(DateTime, default=datetime.utcnow) # 작성일 (최신순 정렬용)
+
+class Feedback(Base):
+    __tablename__ = "feedbacks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(String)  # 피드백 내용
+    created_at = Column(DateTime, default=datetime.utcnow)

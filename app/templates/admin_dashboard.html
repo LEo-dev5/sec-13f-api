@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy 13F - Admin Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+</head>
+<body class="bg-gray-50 min-h-screen p-6 md:p-12">
+
+    <div class="max-w-5xl mx-auto">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900 flex items-center gap-2">
+                    ⚙️ 관리자 센터 <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">Admin</span>
+                </h1>
+                <p class="text-gray-500 mt-1">어서오세요, <strong>{{ username }}</strong>님! 사이트 운영을 위한 통합 제어판입니다.</p>
+            </div>
+            <a href="/" class="px-5 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-50 transition shadow-sm">
+                🏠 메인으로 나가기
+            </a>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">수집된 기관</div>
+                <div class="text-3xl font-extrabold text-blue-600">{{ inst_count }}</div>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">발행된 카드뉴스</div>
+                <div class="text-3xl font-extrabold text-purple-600">{{ insight_count }}</div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-10">
+            <div class="space-y-8">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">📸 콘텐츠 업로드</h2>
+                    <a href="/api/v1/insights/admin/upload" class="group bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition cursor-pointer flex items-center gap-4">
+                        <div class="w-14 h-14 bg-blue-50 rounded-full flex items-center justify-center text-3xl group-hover:bg-blue-600 group-hover:text-white transition">📝</div>
+                        <div>
+                            <h3 class="font-bold text-gray-900 text-lg">인사이트 카드 발행</h3>
+                            <p class="text-sm text-gray-500">이미지 카드뉴스를 업로드합니다.</p>
+                        </div>
+                    </a>
+                </div>
+
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">📡 데이터 업데이트</h2>
+                    <div class="space-y-4">
+                        <button onclick="runAction('/admin/update/gurus')" class="w-full text-left group bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:border-indigo-500 hover:shadow-md transition cursor-pointer flex items-center gap-4">
+                            <div class="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center text-xl group-hover:bg-indigo-600 group-hover:text-white transition">⚡️</div>
+                            <div>
+                                <h3 class="font-bold text-gray-900">핵심 3대장 업데이트</h3>
+                            </div>
+                        </button>
+                        <button onclick="runAction('/admin/update/all')" class="w-full text-left group bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:border-orange-500 hover:shadow-md transition cursor-pointer flex items-center gap-4">
+                            <div class="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center text-xl group-hover:bg-orange-600 group-hover:text-white transition">🐢</div>
+                            <div>
+                                <h3 class="font-bold text-gray-900">전체 데이터 수집</h3>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center justify-between">
+                    <span>📋 등록된 인사이트 관리</span>
+                    <span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded">{{ insights|length }}개</span>
+                </h2>
+                
+                <div class="space-y-4 max-h-[500px] overflow-y-auto pr-2">
+                    {% for item in insights %}
+                    <div class="flex items-center gap-4 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition">
+                        <img src="{{ item.image_url }}" class="w-16 h-12 object-cover rounded bg-gray-200">
+                        
+                        <div class="flex-1 min-w-0">
+                            <h4 class="font-bold text-gray-800 truncate text-sm">{{ item.title }}</h4>
+                            <p class="text-xs text-gray-400">{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                        </div>
+
+                        <button onclick="deleteInsight('{{ item.id }}')" class="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-full transition" title="삭제하기">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                        </button>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-10 text-gray-400 text-sm">등록된 카드가 없습니다.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-10 pt-10 border-t border-gray-200">
+            <h2 class="text-sm font-bold text-gray-400 mb-4 uppercase">Danger Zone</h2>
+            <div class="flex gap-4">
+                <button onclick="runAction('/admin/reset-cache')" class="text-xs text-red-500 hover:underline">캐시 초기화</button>
+                <button onclick="runAction('/admin/fix-names')" class="text-xs text-green-600 hover:underline">데이터 무결성 검사</button>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mt-8">
+                <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center justify-between">
+                    <span>💌 도착한 피드백</span>
+                    <span class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">{{ feedbacks|length }}건</span>
+                </h2>
+                
+                <div class="space-y-3 max-h-[400px] overflow-y-auto">
+                    {% for fb in feedbacks %}
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-100 relative group">
+                        <p class="text-gray-800 text-sm whitespace-pre-wrap leading-relaxed">{{ fb.content }}</p>
+                        <div class="mt-2 flex justify-between items-center">
+                            <span class="text-xs text-gray-400">{{ fb.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                            <button onclick="deleteFeedback('{{ fb.id }}')" class="text-xs text-red-400 hover:text-red-600 font-bold opacity-0 group-hover:opacity-100 transition">
+                                확인 후 삭제
+                            </button>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-10 text-gray-400 text-sm">아직 도착한 피드백이 없습니다.</div>
+                    {% endfor %}
+                </div>
+            </div>
+    </div>
+
+    <script>
+        // 기존 실행 함수
+        async function runAction(url) {
+            if (!confirm("작업을 실행하시겠습니까?")) return;
+            try {
+                const res = await fetch(url, { method: "POST" });
+                if (res.status === 401) { alert("로그인 필요"); location.reload(); return; }
+                const data = await res.json();
+                alert(data.status === "success" ? "✅ 완료: " + data.message : "🔥 오류: " + data.message);
+                if (data.status === "success") location.reload();
+            } catch (err) { alert("서버 오류: " + err); }
+        }
+
+        // 🚨 삭제 함수
+        async function deleteInsight(id) {
+            if (!confirm("정말 이 카드를 삭제하시겠습니까?\n(복구할 수 없습니다!)")) return;
+
+            try {
+                const res = await fetch(`/api/v1/insights/admin/${id}`, { method: "DELETE" });
+                const data = await res.json();
+                
+                if (data.status === "success") {
+                    alert("🗑️ 삭제되었습니다.");
+                    location.reload(); 
+                } else {
+                    alert("오류 발생: " + data.message);
+                }
+            } catch (err) {
+                alert("서버 연결 실패");
+            }
+        }
+        // 기존 스크립트 아래에 추가
+        async function deleteFeedback(id) {
+            if (!confirm("피드백을 확인했으므로 삭제하시겠습니까?")) return;
+            const res = await fetch(`/api/v1/admin/feedback/${id}`, { method: "DELETE" });
+            const data = await res.json();
+            if (data.status === "success") location.reload();
+        }
+    </script>
+</body>
+</html>

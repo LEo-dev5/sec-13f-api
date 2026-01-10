@@ -3,131 +3,278 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Easy 13F - 월스트리트 따라하기</title>
+    <title>Easy 13F - 월스트리트 인사이트</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class', // 'media'가 아닌 'class'로 설정해야 수동 토글 가능
+        }
+    </script>
+
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    
     <style>
-        body { font-family: "Pretendard Variable", Pretendard, sans-serif; }
+        .swiper-button-next, .swiper-button-prev { color: #3B82F6; opacity: 0.7; transition: opacity 0.3s; }
+        .swiper-button-next:hover, .swiper-button-prev:hover { opacity: 1; }
+        @media (max-width: 768px) { .swiper-button-next, .swiper-button-prev { display: none; } }
+        
+        /* 다크모드 트랜지션 부드럽게 */
+        body, div, a, p, h1, h2, h3, span { transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
     </style>
+
+    <script>
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
 </head>
-<body class="bg-gray-50 text-gray-800">
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300">
 
-    <section class="flex flex-col items-center justify-center pt-20 pb-12 px-6 text-center">
-        <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 mb-4 leading-tight">
-            월스트리트의 거인들은<br>
-            지금 <span class="text-blue-600">무엇을 샀을까요?</span> 🧐
+    <div class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 pb-16 pt-20 px-6 text-center shadow-sm dark:shadow-none">
+        <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 dark:text-white mb-4 tracking-tight leading-tight">
+            월스트리트의 거인들은<br class="md:hidden" /> 
+            지금 <span class="text-blue-600 dark:text-blue-400 relative inline-block">무엇을 샀을까요?
+                <svg class="absolute w-full h-3 -bottom-1 left-0 text-blue-200 dark:text-blue-900 -z-10" viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M0 5 Q 50 10 100 5" stroke="currentColor" stroke-width="8" fill="none" /></svg>
+            </span> 🧐
         </h1>
-        <p class="text-lg text-gray-500 mb-10 max-w-2xl">
-            워렌 버핏, 마이클 버리 등 전설적인 투자자들의<br class="md:hidden"> 
-            최신 포트폴리오를 0.1초 만에 확인하세요.
-        </p>
+        <p class="text-gray-500 dark:text-gray-400 mb-10 text-lg">워런 버핏, 마이클 버리 등 전설적인 투자자들의 최신 포트폴리오를 0.1초 만에 확인하세요.</p>
 
-        <div class="w-full max-w-2xl relative">
+        <div class="max-w-2xl mx-auto relative group z-20">
+            <div class="absolute -inset-1 bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
             <form action="/search" method="get" class="relative">
-                <input type="text" name="q" 
-                    class="w-full py-4 pl-6 pr-14 rounded-full border border-gray-200 shadow-lg text-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition placeholder-gray-400"
-                    placeholder="기관명 혹은 종목(티커) 검색 (예: 애플, 버크셔)" required>
-                <button type="submit" class="absolute right-3 top-3 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
+                <input type="text" name="q" placeholder="기관명 혹은 종목(티커) 검색 (예: 애플, 버크셔)" 
+                       class="w-full py-4 pl-8 pr-16 rounded-full border-0 shadow-lg text-gray-700 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 text-lg bg-white dark:bg-gray-700">
+                <button type="submit" class="absolute right-3 top-2.5 bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition shadow-md">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
                 </button>
             </form>
         </div>
-    </section>
+    </div>
 
-    <section class="max-w-6xl mx-auto px-6 pb-24">
-        <div class="flex items-center gap-2 mb-8">
-            <span class="text-2xl">🔥</span>
-            <h2 class="text-2xl font-bold text-gray-900">지금 가장 핫한 투자자</h2>
-        </div>
-
-        {% if gurus %}
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {% for item in gurus %}
-            <div class="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 hover:shadow-md transition flex flex-col items-center cursor-pointer group"
-                 onclick="location.href='/api/v1/sec/dashboard/{{ item.cik }}'">
-                
-                <div class="text-center mb-6">
-                    <h3 class="text-xl font-bold text-gray-900 mb-1 group-hover:text-blue-600 transition">{{ item.name }}</h3>
-                    <p class="text-sm text-gray-500 font-medium">
-                        운용 자산: <span class="text-blue-600">${{ "{:,}".format(item.total_assets * 1000) }}</span>
-                    </p>
-                </div>
-
-                <div class="relative w-48 h-48 mb-4">
-                    <canvas id="chart-{{ loop.index }}"></canvas>
-                </div>
-                
-                <p class="text-xs text-gray-400 mt-2 font-bold group-hover:text-blue-500 transition">클릭하여 포트폴리오 보기 ➜</p>
+    <main class="max-w-6xl mx-auto px-6 py-16">
+        
+        <div class="mb-24">
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-2">
+                🔥 지금 가장 핫한 투자자
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {% for guru in gurus %}
+                <a href="/api/v1/sec/dashboard/{{ guru.cik }}" class="group bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden">
+                    <div class="text-center mb-6 relative z-10">
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">{{ guru.name }}</h3>
+                        <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 font-medium">운용 자산: <span class="text-blue-600 dark:text-blue-400">${{ "{:,}".format(guru.total_assets) }}</span></p>
+                    </div>
+                    <div class="relative w-40 h-40 mx-auto mb-4">
+                        <canvas id="chart-{{ guru.cik }}"></canvas>
+                        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div class="w-20 h-20 bg-white dark:bg-gray-800 rounded-full transition-colors duration-300"></div>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <span class="text-[10px] font-bold text-gray-400 dark:text-gray-600 uppercase tracking-widest group-hover:text-blue-500 dark:group-hover:text-blue-400 transition">클릭하여 포트폴리오 보기 ➜</span>
+                    </div>
+                </a>
+                {% endfor %}
             </div>
-            {% endfor %}
         </div>
-        {% else %}
-        <div class="text-center py-12 bg-white rounded-2xl border border-dashed border-gray-300">
-            <p class="text-gray-400 text-lg">아직 등록된 Guru 데이터가 없습니다.</p>
-            <p class="text-sm text-gray-300 mt-2">관리자 페이지에서 [Update All]을 진행해주세요.</p>
+
+        {% if insights %}
+        <div class="mb-10">
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-2">
+                💡 최신 인사이트
+                <span class="text-xs font-normal text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 px-2 py-1 rounded-full">New Update</span>
+            </h2>
+            
+            <div class="swiper mySwiper !pb-10">
+                <div class="swiper-wrapper">
+                    {% for item in insights %}
+                    <div class="swiper-slide group cursor-pointer p-1">
+                        <div class="relative overflow-hidden rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 mb-4 group-hover:shadow-lg transition-all duration-300">
+                            <img src="{{ item.image_url }}" alt="{{ item.title }}" 
+                                 class="w-full h-auto object-cover transform group-hover:scale-105 transition-transform duration-500">
+                            <a href="{{ item.image_url }}" target="_blank" class="absolute inset-0 z-10"></a>
+                        </div>
+                        
+                        <div class="px-2">
+                            <h3 class="text-xl md:text-2xl font-bold text-gray-900 dark:text-white leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                {{ item.title }}
+                            </h3>
+                            <p class="text-sm text-gray-400 dark:text-gray-500 mt-2 font-medium">
+                                {{ item.created_at.strftime('%Y.%m.%d') }}
+                            </p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="swiper-button-next"></div>
+                <div class="swiper-button-prev"></div>
+            </div>
         </div>
         {% endif %}
-    </section>
 
-    <footer class="text-center py-8 text-gray-400 text-sm border-t border-gray-100 mt-10">
+    </main>
+
+    <footer class="py-10 text-center text-gray-400 dark:text-gray-600 text-xs border-t border-gray-100 dark:border-gray-800 mt-10">
         &copy; 2026 Easy 13F Analyzer. All rights reserved.
     </footer>
 
-    <script id="guru-data" type="application/json">
-        {{ gurus | tojson | safe }}
-    </script>
+    <button id="theme-toggle" class="fixed bottom-6 right-6 p-3 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-yellow-400 transition z-50">
+        <svg id="theme-toggle-dark-icon" class="hidden w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+        </svg>
+        <svg id="theme-toggle-light-icon" class="hidden w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"></path>
+        </svg>
+    </button>
 
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // 1. 숨겨둔 데이터를 꺼내옵니다.
-            const rawData = document.getElementById('guru-data').textContent;
-            
-            // 2. 텍스트를 진짜 자바스크립트 객체로 변환합니다.
-            const guruData = JSON.parse(rawData);
-
-            // 3. 차트 그리기 (이제 에러 없음!)
-            guruData.forEach((item, index) => {
-                const ctx = document.getElementById('chart-' + (index + 1));
-                
-                if (ctx) {
-                    new Chart(ctx, {
-                        type: 'doughnut',
-                        data: {
-                            labels: item.labels,
-                            datasets: [{
-                                data: item.data,
-                                backgroundColor: [
-                                    '#3B82F6', '#60A5FA', '#93C5FD', '#BFDBFE', '#DBEAFE', '#E5E7EB'
-                                ],
-                                hoverOffset: 4,
-                                borderWidth: 0
-                            }]
-                        },
-                        options: {
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                                legend: { display: false },
-                                tooltip: {
-                                    callbacks: {
-                                        label: function(context) {
-                                            return ' ' + context.label + ': ' + context.raw + '%';
-                                        }
-                                    },
-                                    backgroundColor: 'rgba(0,0,0,0.8)',
-                                    padding: 10,
-                                    cornerRadius: 8,
-                                }
-                            },
-                            cutout: '70%',
-                            animation: { animateScale: true, animateRotate: true }
-                        }
-                    });
+        // 1. 차트 설정 (기존)
+        const guruData = {{ gurus | tojson | safe }};
+        guruData.forEach(guru => {
+            const ctx = document.getElementById(`chart-${guru.cik}`).getContext('2d');
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: guru.labels,
+                    datasets: [{
+                        data: guru.data,
+                        backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#6366F1', '#EC4899', '#E5E7EB'],
+                        borderWidth: 0,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '60%',
+                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                    animation: { animateScale: true, animateRotate: true }
                 }
             });
+        });
+
+        // 2. Swiper 설정 (기존)
+        var swiper = new Swiper(".mySwiper", {
+            slidesPerView: 1.2,
+            spaceBetween: 20,
+            grabCursor: true,
+            navigation: { nextEl: ".swiper-button-next", prevEl: ".swiper-button-prev" },
+            breakpoints: {
+                640: { slidesPerView: 2.2, spaceBetween: 30 },
+                1024: { slidesPerView: 2.5, spaceBetween: 40 }
+            }
+        });
+
+        // 🌑 3. 다크모드 토글 로직 (버튼 동작)
+        var themeToggleBtn = document.getElementById('theme-toggle');
+        var darkIcon = document.getElementById('theme-toggle-dark-icon');
+        var lightIcon = document.getElementById('theme-toggle-light-icon');
+
+        // 현재 상태에 따라 아이콘 표시
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            lightIcon.classList.remove('hidden');
+        } else {
+            darkIcon.classList.remove('hidden');
+        }
+
+        themeToggleBtn.addEventListener('click', function() {
+            // 아이콘 교체
+            darkIcon.classList.toggle('hidden');
+            lightIcon.classList.toggle('hidden');
+
+            // 테마 변경 및 저장
+            if (localStorage.theme === 'dark') {
+                localStorage.theme = 'light';
+                document.documentElement.classList.remove('dark');
+            } else {
+                localStorage.theme = 'dark';
+                document.documentElement.classList.add('dark');
+            }
+        });
+    </script>
+    
+    <button onclick="openFeedbackModal()" class="fixed bottom-6 right-20 p-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg border border-transparent transition z-50 flex items-center gap-2 group">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+        <span class="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 ease-in-out whitespace-nowrap text-sm font-bold">의견 보내기</span>
+    </button>
+
+    <div id="feedbackModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-[60] backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 transform transition-all scale-95 opacity-0" id="feedbackContent">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white">운영자에게 한마디 📬</h3>
+                <button onclick="closeFeedbackModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <form id="feedbackForm" class="space-y-4">
+                <textarea name="content" rows="4" placeholder="서비스 이용 중 불편한 점이나 추가되었으면 하는 기능이 있다면 자유롭게 적어주세요!" 
+                          class="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"></textarea>
+                
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <span>보내기 🚀</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ... (기존 차트, Swiper, 다크모드 스크립트 유지) ...
+
+        // 💬 피드백 모달 로직
+        const modal = document.getElementById('feedbackModal');
+        const modalContent = document.getElementById('feedbackContent');
+
+        function openFeedbackModal() {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            // 애니메이션
+            setTimeout(() => {
+                modalContent.classList.remove('scale-95', 'opacity-0');
+                modalContent.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        function closeFeedbackModal() {
+            modalContent.classList.remove('scale-100', 'opacity-100');
+            modalContent.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.remove('flex');
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        // 배경 클릭 시 닫기
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeFeedbackModal();
+        });
+
+        // 전송 처리
+        document.getElementById('feedbackForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            try {
+                const res = await fetch('/api/v1/feedback/send', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    alert(data.message);
+                    e.target.reset();
+                    closeFeedbackModal();
+                } else {
+                    alert('전송 실패: ' + data.message);
+                }
+            } catch (err) {
+                alert('서버 오류 발생');
+            }
         });
     </script>
 </body>
