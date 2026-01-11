@@ -5,13 +5,13 @@ from datetime import datetime
 
 class Institution(Base):
     __tablename__ = "institutions"
-
+    # ... (기존 코드 유지) ...
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String, index=True)
     cik = Column(String, unique=True, index=True)
     description = Column(Text, nullable=True)
     ai_summary = Column(Text, nullable=True) 
-    is_featured = Column(Boolean, default=False) # (Boolean이 없다면 import 필요, 없어도 무관)
+    is_featured = Column(Boolean, default=False) # (Boolean import 필요하면 추가)
 
     holdings = relationship("Holding", back_populates="institution")
 
@@ -25,8 +25,7 @@ class Holding(Base):
     ticker = Column(String)
     holding_type = Column(String)
     
-    # 🚨 [핵심 수정] Integer -> BigInteger로 변경
-    # 주식 수와 평가액은 21억을 넘을 수 있으므로 큰 통을 써야 합니다.
+    # 🚨 [핵심 수정] Integer -> BigInteger로 변경!
     shares = Column(BigInteger) 
     value = Column(BigInteger)
     
