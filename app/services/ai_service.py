@@ -38,7 +38,7 @@ async def analyze_portfolio_by_llm(holdings: list, institution_name: str) -> str
         (300자 이내, 친절한 해요체 사용, 마크다운 형식 금지)
         """
 
-        # 🚨 [핵심 수정] 모델명을 'gemini-2.0-flash'로 변경 (터미널에서 확인된 모델)
+        # 🚨 [핵심 수정] 터미널에서 확인된 'gemini-2.0-flash' 모델 사용
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
         
         payload = {
@@ -52,7 +52,7 @@ async def analyze_portfolio_by_llm(holdings: list, institution_name: str) -> str
             
             if resp.status_code != 200:
                 print(f"🔥 Google API Error: {resp.text}")
-                return f"AI 오류 ({resp.status_code})"
+                return f"AI 오류 ({resp.status_code}): 모델명 불일치 또는 권한 문제"
 
             data = resp.json()
             try:
