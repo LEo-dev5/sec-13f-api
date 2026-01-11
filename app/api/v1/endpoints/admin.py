@@ -45,9 +45,18 @@ TOP_FUNDS = [
 # 🔐 관리자 인증
 # ====================================================
 def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
-    correct_username = os.getenv("ADMIN_USERNAME", "admin")
-    correct_password = os.getenv("ADMIN_PASSWORD", "secret")
+    # 1. 환경변수 가져오기 (기본값 "admin", "secret"을 삭제!)
+    correct_username = os.getenv("ADMIN_USERNAME")
+    correct_password = os.getenv("ADMIN_PASSWORD")
     
+    # 🚨 [보안 강화] 환경변수가 설정 안 되어 있으면 아예 접속 불가 처리
+    if not correct_username or not correct_password:
+         raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="서버 보안 설정 오류: 관리자 계정이 설정되지 않았습니다. (Render 환경변수를 확인하세요)",
+        )
+
+    # 2. 아이디/비번 비교 (안전한 비교 함수 사용)
     is_correct_username = secrets.compare_digest(credentials.username, correct_username)
     is_correct_password = secrets.compare_digest(credentials.password, correct_password)
     
