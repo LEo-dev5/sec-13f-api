@@ -1,24 +1,28 @@
-# app/db/database.py
+import os
 from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# 1. SQLite 데이터베이스 파일 경로 지정
-# ./13f_data.db 라는 파일이 프로젝트 루트에 생깁니다.
-SQLALCHEMY_DATABASE_URL = "sqlite:///./13f_data.db"
+# 1. 환경변수에서 DB 주소 가져오기 (없으면 기존처럼 SQLite 사용)
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
 
-# 2. 엔진 생성 (SQLite는 한 번에 한 쓰레드만 접근 가능하므로 check_same_thread=False 필요)
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
+# 🚨 Render의 주소는 'postgres://' 로 시작하는데,
+# 파이썬(SQLAlchemy)은 'postgresql://' 로 시작해야 알아듣습니다. (이거 중요!)
+if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# 3. 세션(접속기) 생성기
+# 2. 엔진 생성 (SQLite vs Postgres 설정 차이 처리)
+if "sqlite" in SQLALCHEMY_DATABASE_URL:
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+else:
+    # PostgreSQL은 check_same_thread 옵션이 필요 없습니다.
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# 4. 모델들이 상속받을 기본 클래스
 Base = declarative_base()
 
-# 5. DB 세션을 가져오는 의존성 함수 (FastAPI에서 사용)
 def get_db():
     db = SessionLocal()
     try:
