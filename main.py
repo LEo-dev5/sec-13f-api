@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi import Request
+from fastapi import Response
 from app.db.database import SessionLocal
 from app.db.models import VisitLog
 
@@ -61,6 +62,26 @@ async def log_visits(request: Request, call_next):
             print(f"Logging Error: {e}") # 로깅 실패해도 사이트는 켜져야 함
 
     return response
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def sitemap():
+    # 사이트의 주요 페이지 목록
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+        <url>
+            <loc>https://easy13f.com/</loc>
+            <changefreq>daily</changefreq>
+            <priority>1.0</priority>
+        </url>
+        <url>
+            <loc>https://easy13f.com/search</loc>
+            <changefreq>weekly</changefreq>
+            <priority>0.8</priority>
+        </url>
+    </urlset>
+    """
+    return Response(content=xml, media_type="application/xml")
+
 
 # 3. 폴더 생성 (없으면 에러나니까)
 os.makedirs("app/static/uploads", exist_ok=True)
