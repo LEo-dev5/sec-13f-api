@@ -1,32 +1,58 @@
-import wikipedia
+import httpx
+import asyncio
 
-def get_company_description(query: str) -> str:
+# 🚨 [핵심 수정] 위키피디아도 User-Agent가 필수입니다!
+WIKI_HEADERS = {
+    "User-Agent": "Easy13F_Project/1.0 (kang203062@gmail.com)",
+    "Accept-Encoding": "gzip, deflate"
+}
+
+async def get_company_description(ticker: str, institution_name: str) -> str:
     """
-    [수정됨] 위키백과에서 가장 정확한 회사 메인 페이지의 '요약문'만 가져옵니다.
+    위키피디아 API를 통해 기업/기관 설명을 가져옵니다.
+    1순위: 기관명 검색 / 2순위: 티커 검색
     """
-    try:
-        # 1. 언어 설정
-        wikipedia.set_lang("en")
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        # 검색어 후보군 (기관명 우선)
+        queries = [institution_name, ticker]
         
-        # 2. 검색어 정제 (Inc, Corp 등 제거하고 순수 이름만)
-        clean_name = query.replace(" Inc", "").replace(" Corp", "").replace(" L.P.", "").replace(" plc", "").strip()
-        
-        # 3. [핵심 변경] search() 대신 summary()를 바로 시도합니다.
-        # auto_suggest=False: 엉뚱한 거 추천받지 말고 내 검색어 그대로 찾아라
-        try:
-            summary = wikipedia.summary(clean_name, sentences=4, auto_suggest=False)
-            return summary
-        except wikipedia.exceptions.DisambiguationError as e:
-            # 동명이인이 많으면 첫 번째 추천어로 재시도
-            return wikipedia.summary(e.options[0], sentences=4)
-        except wikipedia.exceptions.PageError:
-            # 페이지 없으면 검색으로 선회
-            search_res = wikipedia.search(clean_name, results=1)
-            if search_res:
-                return wikipedia.summary(search_res[0], sentences=4)
+        for query in queries:
+            if not query: continue
             
-        return ""
+            try:
+                # 1. 위키피디아 검색 (페이지 제목 찾기)
+                search_url = "https://en.wikipedia.org/w/api.php"
+                search_params = {
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": query,
+                    "format": "json",
+                    "srlimit": 1
+                }
+                
+                # 🚨 헤더 추가
+                resp = await client.get(search_url, params=search_params, headers=WIKI_HEADERS)
+                data = resp.json()
+                
+                if not data.get("query", {}).get("search"):
+                    continue
+                    
+                page_title = data["query"]["search"][0]["title"]
+                
+                # 2. 상세 내용 가져오기 (요약본)
+                summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{page_title}"
+                
+                # 🚨 헤더 추가
+                summary_resp = await client.get(summary_url, headers=WIKI_HEADERS)
+                
+                if summary_resp.status_code == 200:
+                    summary_data = summary_resp.json()
+                    extract = summary_data.get("extract", "")
+                    if extract:
+                        return extract  # 성공하면 바로 반환
+                        
+            except Exception as e:
+                print(f"⚠️ Wiki Error ({query}): {e}")
+                continue
 
-    except Exception as e:
-        print(f"⚠️ 위키백과 검색 실패: {e}")
-        return ""
+    return "해당 기관에 대한 위키피디아 정보를 찾을 수 없습니다."
