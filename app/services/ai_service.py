@@ -39,6 +39,7 @@ async def analyze_portfolio_by_llm(holdings: list, institution_name: str) -> str
         """
 
         # 4. 직접 URL 호출 (라이브러리 의존성 제거)
+        # gemini-1.5-flash 모델의 REST API 주소입니다.
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
         
         payload = {
@@ -48,18 +49,25 @@ async def analyze_portfolio_by_llm(holdings: list, institution_name: str) -> str
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload)
+            resp = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
             
             if resp.status_code != 200:
                 print(f"🔥 Google API Error: {resp.text}")
-                return f"AI 서버 응답 오류 ({resp.status_code})"
+                # 혹시 Flash 모델이 안되면 Pro 모델로 재시도
+                if "not found" in resp.text or resp.status_code == 404:
+                     url_pro = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
+                     resp = await client.post(url_pro, json=payload, headers={"Content-Type": "application/json"})
+                     if resp.status_code != 200:
+                         return "AI 서버가 응답하지 않습니다."
+                else:
+                    return f"AI 오류 ({resp.status_code})"
 
             data = resp.json()
             # 응답 파싱
             try:
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
                 return text
-            except KeyError:
+            except (KeyError, IndexError):
                 return "AI가 답변을 생성하지 못했습니다."
 
     except Exception as e:

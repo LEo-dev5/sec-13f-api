@@ -1,39 +1,54 @@
-import wikipedia
+import httpx
 import asyncio
 
-# 1. 위키피디아 설정 (언어 및 차단 방지용 User-Agent)
-wikipedia.set_lang("en")
-# 라이브러리 내부 정책에 따라 User-Agent를 설정합니다.
-try:
-    wikipedia.set_user_agent("Easy13F_Student_Project/1.0 (kang203062@gmail.com)")
-except AttributeError:
-    pass # 구버전일 경우 패스
+# 🚨 브라우저인 척 속이는 헤더 (필수!)
+WIKI_HEADERS = {
+    "User-Agent": "Easy13F_Project/1.0 (kang203062@gmail.com)",
+    "Accept-Encoding": "gzip, deflate"
+}
 
 async def get_company_description(ticker: str, institution_name: str) -> str:
     """
-    wikipedia 라이브러리를 사용하여 기업 설명을 가져옵니다.
-    (동기 함수인 wikipedia를 비동기 환경에서 쓰기 위해 thread로 실행)
+    라이브러리 없이 직접 위키피디아 API를 호출합니다. (가장 빠름)
     """
-    return await asyncio.to_thread(fetch_wikipedia_sync, ticker, institution_name)
-
-def fetch_wikipedia_sync(ticker: str, institution_name: str) -> str:
-    queries = [institution_name, f"{institution_name} (company)", ticker]
-    
-    for query in queries:
-        try:
-            # sentences=3 : 딱 3문장만 가져와서 로딩 속도 향상
-            summary = wikipedia.summary(query, sentences=3, auto_suggest=False)
-            if summary:
-                return summary
-        except wikipedia.exceptions.DisambiguationError as e:
-            # 검색 결과가 여러 개일 경우 첫 번째 것 시도
-            try:
-                return wikipedia.summary(e.options[0], sentences=3, auto_suggest=False)
-            except:
-                continue
-        except wikipedia.exceptions.PageError:
-            continue # 페이지 없으면 다음 검색어 시도
-        except Exception:
-            continue
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        # 검색어 후보: 기관명 우선, 그 다음 티커
+        queries = [institution_name, f"{institution_name} (company)", ticker]
+        
+        for query in queries:
+            if not query: continue
             
-    return "위키피디아에서 정보를 찾을 수 없습니다."
+            try:
+                # 1. 페이지 제목 찾기
+                search_url = "https://en.wikipedia.org/w/api.php"
+                params = {
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": query,
+                    "format": "json",
+                    "srlimit": 1
+                }
+                
+                resp = await client.get(search_url, params=params, headers=WIKI_HEADERS)
+                data = resp.json()
+                
+                if not data.get("query", {}).get("search"):
+                    continue
+                
+                # 2. 요약 내용 가져오기
+                page_title = data["query"]["search"][0]["title"]
+                summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{page_title}"
+                
+                summary_resp = await client.get(summary_url, headers=WIKI_HEADERS)
+                
+                if summary_resp.status_code == 200:
+                    summary_data = summary_resp.json()
+                    extract = summary_data.get("extract", "")
+                    if extract:
+                        return extract # 성공하면 바로 리턴
+                        
+            except Exception as e:
+                print(f"Wiki Error ({query}): {e}")
+                continue
+
+    return "위키피디아 정보를 찾을 수 없습니다."
