@@ -80,22 +80,23 @@ async def log_visits(request: Request, call_next):
 
 @app.get("/sitemap.xml", include_in_schema=False)
 async def sitemap():
-    # 사이트의 주요 페이지 목록
-    xml = """<?xml version="1.0" encoding="UTF-8"?>
-    <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-        <url>
-            <loc>https://easy13f.com/</loc>
-            <changefreq>daily</changefreq>
-            <priority>1.0</priority>
-        </url>
-        <url>
-            <loc>https://easy13f.com/search</loc>
-            <changefreq>weekly</changefreq>
-            <priority>0.8</priority>
-        </url>
-    </urlset>
-    """
-    return Response(content=xml, media_type="application/xml")
+    # 🚨 [수정] 앞에 공백이 있으면 안 되므로, .strip()으로 싹 지워서 보냅니다.
+    xml_content = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://easy13f.com/</loc>
+        <changefreq>daily</changefreq>
+        <priority>1.0</priority>
+    </url>
+    <url>
+        <loc>https://easy13f.com/search</loc>
+        <changefreq>weekly</changefreq>
+        <priority>0.8</priority>
+    </url>
+</urlset>
+"""
+    # .strip() : 문자열 앞뒤의 공백/줄바꿈을 제거하는 함수
+    return Response(content=xml_content.strip(), media_type="application/xml")
 
 
 # 3. 폴더 생성 (없으면 에러나니까)
