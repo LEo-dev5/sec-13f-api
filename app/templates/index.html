@@ -3,15 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Easy 13F - 월스트리트 인사이트</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     
-    <script>
-        tailwind.config = {
-            darkMode: 'class', // 'media'가 아닌 'class'로 설정해야 수동 토글 가능
-        }
-    </script>
+    <title>Easy 13F - 월스트리트 투자 거물들의 포트폴리오</title>
+    <meta name="description" content="워런 버핏, 마이클 버리 등 전설적인 투자자들의 최신 주식 포트폴리오(13F)를 분석해 드립니다. 미국 주식 투자 필수 사이트.">
+    <meta name="keywords" content="미국주식, 13F, 워런버핏, 포트폴리오, 주식분석, 버크셔해서웨이, 서학개미">
+    <meta name="author" content="Easy 13F">
 
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://easy13f.onrender.com/">
+    <meta property="og:title" content="월스트리트 거인들은 지금 무엇을 샀을까? 🧐">
+    <meta property="og:description" content="0.1초 만에 확인하는 대가들의 최신 포트폴리오. 지금 바로 확인하세요!">
+    <meta property="og:image" content="https://images.unsplash.com/photo-1611974765270-ca1258634369?q=80&w=1200&auto=format&fit=crop">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
     <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
     <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -21,8 +27,6 @@
         .swiper-button-next, .swiper-button-prev { color: #3B82F6; opacity: 0.7; transition: opacity 0.3s; }
         .swiper-button-next:hover, .swiper-button-prev:hover { opacity: 1; }
         @media (max-width: 768px) { .swiper-button-next, .swiper-button-prev { display: none; } }
-        
-        /* 다크모드 트랜지션 부드럽게 */
         body, div, a, p, h1, h2, h3, span { transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
     </style>
 
@@ -199,7 +203,7 @@
             }
         });
     </script>
-    
+
     <button onclick="openFeedbackModal()" class="fixed bottom-6 right-20 p-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg border border-transparent transition z-50 flex items-center gap-2 group">
         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
         <span class="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 ease-in-out whitespace-nowrap text-sm font-bold">의견 보내기</span>
