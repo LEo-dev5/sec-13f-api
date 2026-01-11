@@ -8,7 +8,7 @@ httpx
 psycopg2-binary
 pandas
 lxml
-google-generativeai>=0.7.2
-wikipedia
-# 🚨 [추가] 폼 데이터 처리용 필수 라이브러리
 python-multipart
+wikipedia
+# 🚨 [핵심 수정] 구버전 삭제 -> 신버전 추가
+google-genai
