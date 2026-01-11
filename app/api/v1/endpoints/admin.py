@@ -152,8 +152,8 @@ async def run_crawler_process_all():
                 except Exception: pass
 
         tasks = [worker(cik) for cik in target_ciks]
-        chunk_size = 20 # 50개 -> 20개로 줄임 (DB 부하 감소)
-        
+        chunk_size = 30 # 50개 -> 30개로 줄임 (DB 부하 감소)
+
         for i in range(0, total, chunk_size):
             chunk = tasks[i : i + chunk_size]
             await asyncio.gather(*chunk)
