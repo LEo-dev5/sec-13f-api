@@ -8,7 +8,7 @@ httpx
 psycopg2-binary
 pandas
 lxml
-# 🚨 [핵심 수정] 버전을 명시해서 최신 기능을 가져옵니다.
 google-generativeai>=0.7.2
-# 🚨 [추가] 위키피디아 전용 라이브러리
 wikipedia
+# 🚨 [추가] 폼 데이터 처리용 필수 라이브러리
+python-multipart
