@@ -17,6 +17,21 @@ from app.db.models import Institution, Holding, Insight, Feedback
 from app.api.v1.endpoints import sec, admin, home, search, stock, insights, feedback
 # from app.services.ticker_service import load_sec_tickers # (일단 주석 유지)
 
+
+is_production = os.getenv("RENDER") is not None
+
+app = FastAPI(
+    title="Easy13F",
+    description="월가 대가들의 포트폴리오 분석 서비스",
+    version="1.0.0",
+    # 🔒 배포 환경이면 문서(Swagger UI) 숨기고, 디버그 끄기
+    docs_url=None if is_production else "/docs",
+    redoc_url=None if is_production else "/redoc",
+    debug=False if is_production else True
+)
+
+
+
 # 2. 수명 주기 설정
 @asynccontextmanager
 async def lifespan(app: FastAPI):
