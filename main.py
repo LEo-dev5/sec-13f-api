@@ -3,6 +3,9 @@ import os
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
+from fastapi import Request
+from app.db.database import SessionLocal
+from app.db.models import VisitLog
 
 # 🚨 1. DB 관련 모듈 임포트 (필수!)
 from app.db.database import engine, Base
@@ -33,6 +36,31 @@ async def lifespan(app: FastAPI):
     print("👋 [System] 서버 종료")
 
 app = FastAPI(lifespan=lifespan)
+
+@app.middleware("http")
+async def log_visits(request: Request, call_next):
+    response = await call_next(request)
+    
+    # 1. 정적 파일(.css, .js)이나 관리자 페이지, 파비콘은 카운트 제외
+    if not request.url.path.startswith(("/static", "/admin", "/favicon.ico")):
+        try:
+            # 2. IP 주소 가져오기 (Render 같은 프록시 환경 고려)
+            forwarded = request.headers.get("X-Forwarded-For")
+            if forwarded:
+                client_ip = forwarded.split(",")[0]
+            else:
+                client_ip = request.client.host
+
+            # 3. DB에 기록 (비동기 흐름 방해 안 하도록 별도 세션 사용)
+            db = SessionLocal()
+            visit = VisitLog(ip_address=client_ip, path=request.url.path)
+            db.add(visit)
+            db.commit()
+            db.close()
+        except Exception as e:
+            print(f"Logging Error: {e}") # 로깅 실패해도 사이트는 켜져야 함
+
+    return response
 
 # 3. 폴더 생성 (없으면 에러나니까)
 os.makedirs("app/static/uploads", exist_ok=True)

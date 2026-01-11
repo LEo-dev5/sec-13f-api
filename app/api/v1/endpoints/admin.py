@@ -9,6 +9,9 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import text, desc
 from dotenv import load_dotenv
+from sqlalchemy import func, cast, Date 
+from app.db.models import Institution, Insight, Feedback, VisitLog # VisitLog 추가
+from datetime import timedelta, datetime
 
 # 서비스 & DB 로직
 from app.db.database import get_db, SessionLocal
@@ -51,13 +54,42 @@ async def admin_dashboard(request: Request, db: Session = Depends(get_db), usern
     insight_list = db.query(Insight).order_by(desc(Insight.created_at)).all()
     feedback_list = db.query(Feedback).order_by(desc(Feedback.created_at)).all()
     
+    # 🚨 [추가] 최근 7일간 일별 방문자 수 집계
+    today = datetime.utcnow().date()
+    seven_days_ago = today - timedelta(days=6)
+    
+    # 날짜별로 그룹화해서 카운트 (SQL: SELECT date, count(*) FROM logs GROUP BY date)
+    daily_stats = db.query(
+        cast(VisitLog.timestamp, Date).label('date'),
+        func.count(VisitLog.id).label('count')
+    ).filter(
+        VisitLog.timestamp >= seven_days_ago
+    ).group_by(
+        cast(VisitLog.timestamp, Date)
+    ).order_by(
+        cast(VisitLog.timestamp, Date)
+    ).all()
+
+    # 차트용 데이터 가공 (날짜 리스트, 숫자 리스트)
+    dates = []
+    counts = []
+    
+    # 데이터가 없는 날짜도 0으로 채우기 위한 로직
+    stats_dict = {stat.date: stat.count for stat in daily_stats}
+    for i in range(7):
+        d = seven_days_ago + timedelta(days=i)
+        dates.append(d.strftime("%m-%d")) # '01-11' 형식
+        counts.append(stats_dict.get(d, 0))
+
     return templates.TemplateResponse("admin_dashboard.html", {
         "request": request,
         "username": username,
         "inst_count": inst_count,
         "insight_count": insight_count,
         "insights": insight_list,
-        "feedbacks": feedback_list
+        "feedbacks": feedback_list,
+        "chart_dates": dates,   # 차트 X축
+        "chart_counts": counts  # 차트 Y축
     })
 
 # ====================================================

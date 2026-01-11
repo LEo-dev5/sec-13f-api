@@ -40,8 +40,18 @@ class Insight(Base):
     image_url = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
+
 class Feedback(Base):
     __tablename__ = "feedbacks"
     id = Column(Integer, primary_key=True, index=True)
     content = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+#방문자 기록 
+class VisitLog(Base):
+    __tablename__ = "visit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String)
+    path = Column(String) # 어떤 페이지를 봤는지
+    timestamp = Column(DateTime, default=datetime.utcnow)

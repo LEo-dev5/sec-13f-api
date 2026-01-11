@@ -164,5 +164,51 @@
             if (data.status === "success") location.reload();
         }
     </script>
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8">
+        <h3 class="text-xl font-bold mb-4 text-gray-800 dark:text-gray-100">📉 주간 방문자 추이 (최근 7일)</h3>
+        <div class="relative h-64 w-full">
+            <canvas id="trafficChart"></canvas>
+        </div>
+        </div>
+
+        <script>
+            // Python에서 넘겨준 데이터를 받습니다.
+            const dates = {{ chart_dates | tojson }};
+            const counts = {{ chart_counts | tojson }};
+
+            const ctx = document.getElementById('trafficChart').getContext('2d');
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: '일일 방문자 수',
+                        data: counts,
+                        borderColor: '#3B82F6', // 파란색
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.3, // 곡선
+                        fill: true,
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: 'rgba(200, 200, 200, 0.1)' }
+                        },
+                        x: {
+                            grid: { display: false }
+                        }
+                    }
+                }
+            });
+    </script>
 </body>
 </html>
