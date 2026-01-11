@@ -10,5 +10,3 @@ pandas
 lxml
 python-multipart
 wikipedia
-# 🚨 [핵심 수정] 구버전 삭제 -> 신버전 추가
-google-genai
