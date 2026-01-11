@@ -2,14 +2,27 @@ import httpx
 import pandas as pd
 import xml.etree.ElementTree as ET
 import numpy as np
+import asyncio
 from app.schemas.stock import Holding, FilingResponse
 
-# 🚨 [핵심 수정] 헤더를 실제 브라우저처럼 보이게 변경하되, 이메일은 꼭 포함!
-# User-Agent 형식을 바꿉니다.
-HEADERS = {
-    # 이메일은 사용자님 것으로 유지하세요
-    "User-Agent": "Easy13F_Analyzer/1.0 (kang203062@gmail.com)", 
-    "Accept-Encoding": "gzip, deflate"
+# 🚨 [핵심 수정 1] 헤더 분리 전략
+# SEC는 서버가 2개입니다. (data.sec.gov / www.sec.gov)
+# 각각 맞는 Host 헤더를 보내지 않으면 봇으로 간주하고 차단합니다.
+
+USER_AGENT = "Easy13F_Project (kang203062@gmail.com)"
+
+# 1. 제출 정보 조회용 헤더 (data.sec.gov)
+HEADERS_DATA = {
+    "User-Agent": USER_AGENT,
+    "Accept-Encoding": "gzip, deflate",
+    "Host": "data.sec.gov"
+}
+
+# 2. 문서 다운로드용 헤더 (www.sec.gov)
+HEADERS_ARCHIVE = {
+    "User-Agent": USER_AGENT,
+    "Accept-Encoding": "gzip, deflate",
+    "Host": "www.sec.gov"
 }
 
 # [안전장치] 빈 데이터프레임 컬럼 정의
@@ -23,6 +36,8 @@ def parse_13f_xml_to_dict(xml_content: str) -> list[dict]:
     holdings = []
     try:
         root = ET.fromstring(xml_content)
+        # 네임스페이스 처리 (SEC XML은 종종 네임스페이스가 붙음)
+        # {http://www.sec.gov/edgar/document/thirteenf/informationtable} 같은 거 무시하도록 처리
         for info in root.findall(".//{*}infoTable"):
             try:
                 issuer_node = info.find("{*}nameOfIssuer")
@@ -32,8 +47,8 @@ def parse_13f_xml_to_dict(xml_content: str) -> list[dict]:
                 
                 if issuer_node is None or value_node is None: continue
 
-                ssh_amt_node = shrs_node.find("{*}sshPrnamt")
-                ssh_type_node = shrs_node.find("{*}sshPrnamtType")
+                ssh_amt_node = shrs_node.find("{*}sshPrnamt") if shrs_node is not None else None
+                ssh_type_node = shrs_node.find("{*}sshPrnamtType") if shrs_node is not None else None
                 
                 # Put/Call 태그 확인
                 put_call_node = info.find("{*}putCall")
@@ -44,14 +59,15 @@ def parse_13f_xml_to_dict(xml_content: str) -> list[dict]:
                     elif "CALL" in raw_type: holding_type = "Call"
 
                 holdings.append({
-                    "name_of_issuer": issuer_node.text,
-                    "cusip": cusip_node.text,
+                    "name_of_issuer": issuer_node.text if issuer_node is not None else "Unknown",
+                    "cusip": cusip_node.text if cusip_node is not None else "000000000",
                     "value": int(value_node.text),
                     "shares": int(ssh_amt_node.text) if ssh_amt_node is not None else 0,
                     "ssh_prnamt_type": ssh_type_node.text if ssh_type_node is not None else "SH",
                     "holding_type": holding_type
                 })
-            except AttributeError: continue
+            except (AttributeError, ValueError): 
+                continue
     except Exception as e:
         print(f"⚠️ XML 파싱 실패: {e}")
     return holdings
@@ -60,15 +76,14 @@ def parse_13f_xml_to_dict(xml_content: str) -> list[dict]:
 async def fetch_holdings_df(client, cik_int, accession_number):
     try:
         acc_no_path = accession_number.replace("-", "")
-        # SEC는 www.sec.gov 와 data.sec.gov 가 다를 수 있음 (index.json은 www)
+        # SEC Archives는 www.sec.gov 입니다. -> HEADERS_ARCHIVE 사용
         index_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_no_path}/index.json"
         
         # 1. 인덱스 파일 요청
-        index_resp = await client.get(index_url, headers=HEADERS)
+        index_resp = await client.get(index_url, headers=HEADERS_ARCHIVE)
         
-        # 🚨 [디버깅] 여기서 차단 여부 확인
         if index_resp.status_code != 200:
-            print(f"❌ [SEC 차단] {index_url} -> Status: {index_resp.status_code}")
+            print(f"❌ [SEC 차단/오류] {index_url} -> Status: {index_resp.status_code}")
             return get_empty_df()
         
         directory_data = index_resp.json()
@@ -86,7 +101,7 @@ async def fetch_holdings_df(client, cik_int, accession_number):
         
         # 2. 실제 XML 다운로드
         xml_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_no_path}/{target_xml}"
-        xml_resp = await client.get(xml_url, headers=HEADERS)
+        xml_resp = await client.get(xml_url, headers=HEADERS_ARCHIVE)
         
         if xml_resp.status_code != 200:
             print(f"❌ [XML 다운 실패] Status: {xml_resp.status_code}")
@@ -99,15 +114,17 @@ async def fetch_holdings_df(client, cik_int, accession_number):
         
         df = pd.DataFrame(raw_data)
         
-        # 그룹화
-        df_grouped = df.groupby(['cusip', 'holding_type']).agg({
-            'name_of_issuer': 'first',
-            'value': 'sum',
-            'shares': 'sum',
-            'ssh_prnamt_type': 'first'
-        }).reset_index()
-        
-        return df_grouped
+        # 그룹화 (같은 종목 합치기)
+        if not df.empty:
+            df_grouped = df.groupby(['cusip', 'holding_type']).agg({
+                'name_of_issuer': 'first',
+                'value': 'sum',
+                'shares': 'sum',
+                'ssh_prnamt_type': 'first'
+            }).reset_index()
+            return df_grouped
+        else:
+            return get_empty_df()
         
     except Exception as e:
         print(f"⚠️ DF 생성 에러: {e}")
@@ -116,10 +133,11 @@ async def fetch_holdings_df(client, cik_int, accession_number):
 # [Helper] 전체 명단 (Master Index)
 async def fetch_all_13f_ciks(year: int, quarter: int) -> list[str]:
     print(f"📥 {year}년 {quarter}분기 Master Index 다운로드...")
+    # Archives는 www.sec.gov 사용
     url = f"https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{quarter}/master.idx"
     
-    async with httpx.AsyncClient(follow_redirects=True) as client:
-        resp = await client.get(url, headers=HEADERS, timeout=60.0)
+    async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
+        resp = await client.get(url, headers=HEADERS_ARCHIVE)
         
         if resp.status_code != 200: 
             print(f"❌ Master Index 다운 실패: {resp.status_code}")
@@ -145,14 +163,22 @@ async def fetch_all_13f_ciks(year: int, quarter: int) -> list[str]:
 
 # [Main] 최신 13F 가져오기
 async def fetch_latest_13f(cik: str) -> FilingResponse:
-    # 0 제거 (정수형 변환)
     cik_int = str(int(cik))
     cik_padded = cik.zfill(10)
     
+    # Submissions는 data.sec.gov 사용 -> HEADERS_DATA 사용
     submission_url = f"https://data.sec.gov/submissions/CIK{cik_padded}.json"
     
-    async with httpx.AsyncClient(follow_redirects=True) as client:
-        resp = await client.get(submission_url, headers=HEADERS)
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+        # 🚨 [수정] HEADERS_DATA 사용
+        resp = await client.get(submission_url, headers=HEADERS_DATA)
+        
+        # 429 에러 처리 (재시도 로직)
+        if resp.status_code == 429:
+            print(f"⚠️ [Rate Limit] SEC 과부하. 2초 대기 후 재시도... ({cik})")
+            await asyncio.sleep(2)
+            resp = await client.get(submission_url, headers=HEADERS_DATA)
+
         if resp.status_code != 200: 
             print(f"❌ [Submission 실패] CIK:{cik} Status:{resp.status_code}")
             raise Exception(f"SEC 접속 에러: {resp.status_code}")
@@ -170,15 +196,11 @@ async def fetch_latest_13f(cik: str) -> FilingResponse:
                 })
                 if len(target_filings) == 2: break
         
-        if not target_filings: raise Exception("보고서 없음")
+        if not target_filings: raise Exception("13F 보고서가 없습니다.")
 
-        # 데이터 수집
+        # 데이터 수집 (Archives 접근 -> 함수 내부에서 HEADERS_ARCHIVE 사용)
         df_curr = await fetch_holdings_df(client, cik_int, target_filings[0]['acc'])
         
-        # 🚨 [디버깅] 만약 현재 데이터가 비었으면 즉시 보고
-        if df_curr.empty:
-            print(f"⚠️ [Empty] {institution_name}의 최신 데이터가 비었습니다. (XML 파싱 실패 or 403 차단)")
-
         df_prev = pd.DataFrame()
         if len(target_filings) > 1:
             df_prev = await fetch_holdings_df(client, cik_int, target_filings[1]['acc'])
