@@ -141,7 +141,7 @@ async def run_crawler_process_all():
         if total == 0: return
 
         # 🚨 [핵심 수정] 2개 -> 1개로 줄임 (메모리 보호)
-        sem = asyncio.Semaphore(1) 
+        sem = asyncio.Semaphore(2) 
 
         async def worker(cik):
             async with sem:

@@ -29,22 +29,27 @@ async def search_page(request: Request, q: str = Query("", min_length=1)):
             Institution.name.ilike(f"%{query}%")
         ).all()
         
-        # 2. 종목 검색 (PostgreSQL GroupingError 수정됨 🛠️)
+        # 2. 종목 검색 (🚨 수정: 티커가 없는 '유령 데이터'는 제외!)
         stocks = (
             db.query(
-                # 🚨 핵심 수정: 이름을 그룹핑 함수(max)로 감싸야 에러가 안 납니다!
                 func.max(Holding.name).label("name"), 
                 Holding.ticker, 
                 func.count(Holding.institution_id).label("count"), 
                 func.sum(Holding.value).label("total_value")       
             )
             .filter(
+                # 검색어 조건
                 or_(
                     Holding.name.ilike(f"%{query}%"),
                     Holding.ticker.ilike(f"%{query}%")
                 )
             )
-            .group_by(Holding.ticker) # 티커 기준으로 그룹화
+            # 🚨 [핵심 추가] 티커가 비어있으면 링크가 깨지므로 결과에서 뺍니다.
+            .filter(
+                Holding.ticker != None,
+                Holding.ticker != ""
+            )
+            .group_by(Holding.ticker)
             .order_by(desc("total_value"))
             .limit(50)
             .all()
