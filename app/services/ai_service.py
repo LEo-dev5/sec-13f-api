@@ -1,12 +1,14 @@
 import os
 import httpx
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
 async def analyze_portfolio_by_llm(holdings: list, institution_name: str) -> str:
     """
-    구글 라이브러리를 쓰지 않고, REST API로 직접 요청합니다. (가장 확실한 방법)
+    구글 AI 모델을 호출합니다.
+    전략: 최신 모델(Flash)을 먼저 시도하고, 실패하면 안정적인 구형 모델(Pro)로 자동 전환합니다.
     """
     try:
         # 1. API 키 확인
@@ -38,10 +40,13 @@ async def analyze_portfolio_by_llm(holdings: list, institution_name: str) -> str
         (300자 이내, 친절한 해요체 사용, 마크다운 형식 금지)
         """
 
-        # 4. 직접 URL 호출 (라이브러리 의존성 제거)
-        # gemini-1.5-flash 모델의 REST API 주소입니다.
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-        
+        # 4. 요청 보낼 모델 후보군 (순서대로 시도)
+        # Flash: 빠르고 최신 / Pro: 조금 느리지만 가장 안정적
+        models = [
+            "gemini-1.5-flash",
+            "gemini-pro"
+        ]
+
         payload = {
             "contents": [{
                 "parts": [{"text": prompt}]
@@ -49,27 +54,35 @@ async def analyze_portfolio_by_llm(holdings: list, institution_name: str) -> str
         }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
+            last_error = ""
             
-            if resp.status_code != 200:
-                print(f"🔥 Google API Error: {resp.text}")
-                # 혹시 Flash 모델이 안되면 Pro 모델로 재시도
-                if "not found" in resp.text or resp.status_code == 404:
-                     url_pro = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key={api_key}"
-                     resp = await client.post(url_pro, json=payload, headers={"Content-Type": "application/json"})
-                     if resp.status_code != 200:
-                         return "AI 서버가 응답하지 않습니다."
-                else:
-                    return f"AI 오류 ({resp.status_code})"
+            for model_name in models:
+                try:
+                    # v1beta 엔드포인트 사용
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+                    
+                    # 요청 전송
+                    resp = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
+                    
+                    # 성공(200)하면 바로 결과 리턴하고 끝냄
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        text = data["candidates"][0]["content"]["parts"][0]["text"]
+                        return text
+                    
+                    # 실패하면 로그 찍고 다음 모델 시도
+                    error_msg = resp.text
+                    print(f"⚠️ {model_name} 실패 (Status: {resp.status_code}): {error_msg}")
+                    last_error = f"{model_name} Error: {resp.status_code}"
+                    
+                except Exception as e:
+                    print(f"⚠️ {model_name} 연결 오류: {e}")
+                    last_error = str(e)
+                    continue
 
-            data = resp.json()
-            # 응답 파싱
-            try:
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                return text
-            except (KeyError, IndexError):
-                return "AI가 답변을 생성하지 못했습니다."
+            # 모든 모델이 실패했을 경우
+            return f"AI 분석 서버가 응답하지 않습니다. ({last_error})"
 
     except Exception as e:
         print(f"🔥 AI Request Error: {e}")
-        return f"AI 연결 중 오류 발생: {str(e)[:30]}..."
+        return "AI 연결 중 오류 발생"
