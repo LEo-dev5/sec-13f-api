@@ -141,7 +141,7 @@ async def run_crawler_process_all():
         if total == 0: return
 
         # 🚨 [핵심 수정] 2개 -> 1개로 줄임 (메모리 보호)
-        sem = asyncio.Semaphore(1) 
+        sem = asyncio.Semaphore(3) 
 
         async def worker(cik):
             async with sem:
@@ -152,7 +152,7 @@ async def run_crawler_process_all():
                 except Exception: pass
 
         tasks = [worker(cik) for cik in target_ciks]
-        chunk_size = 10 # 50개 -> 10개로 줄임 (DB 부하 감소)
+        chunk_size = 50 # 50개 -> 50개로 유지 (DB 부하 감소)
 
         for i in range(0, total, chunk_size):
             chunk = tasks[i : i + chunk_size]
