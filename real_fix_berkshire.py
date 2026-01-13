@@ -1,4 +1,4 @@
-# real_fix_berkshire.py (파일 찾기 기능 강화판)
+# real_fix_berkshire.py (최종_오류수정_방탄버전.py)
 import requests
 import xml.etree.ElementTree as ET
 import time
@@ -13,18 +13,18 @@ from app.db.models import Institution, Holding
 
 # SEC 차단 방지 헤더
 HEADERS = {
-    "User-Agent": "Easy13F_Analyzer/2.0 (admin@easy13f.com)",
+    "User-Agent": "Easy13F_Analyzer/3.0 (admin@easy13f.com)", # 버전 올림
     "Accept-Encoding": "gzip, deflate",
     "Host": "www.sec.gov"
 }
 API_HEADERS = {
-    "User-Agent": "Easy13F_Analyzer/2.0 (admin@easy13f.com)",
+    "User-Agent": "Easy13F_Analyzer/3.0 (admin@easy13f.com)",
     "Accept-Encoding": "gzip, deflate",
     "Host": "data.sec.gov"
 }
 
 def fix_berkshire_manual():
-    print("🚀 [Start] 버크셔 데이터 정밀 복구 시작!", flush=True)
+    print("🚀 [Start] 버크셔 데이터 복구 (최종 수정판)...", flush=True)
     db = SessionLocal()
     CIK = "0001067983" 
     
@@ -80,35 +80,41 @@ def fix_berkshire_manual():
         idx_data = idx_resp.json()
         files = idx_data['directory']['item']
         
-        # 4. XML 파일 찾기 로직 (강화됨)
+        # 4. XML 파일 찾기 로직 (에러 방지 추가)
         target_file = None
         xml_candidates = []
 
         print("📂 파일 목록 분석 중...", flush=True)
         for file in files:
             fname = file['name']
-            size = int(file['size'])
+            
+            # 🚨 [수정] 사이즈가 없거나 빈 문자열이면 0으로 처리 (에러 원인 해결)
+            size_str = file.get('size', '0')
+            if size_str == '':
+                size = 0
+            else:
+                try:
+                    size = int(size_str)
+                except ValueError:
+                    size = 0
             
             # XML 파일만 수집
             if fname.endswith('.xml'):
                 xml_candidates.append({'name': fname, 'size': size})
                 
-                # 우선순위 1: 이름에 info나 table이 들어간 것
+                # 우선순위: 이름에 info나 table이 들어간 것
                 if 'info' in fname.lower() or 'table' in fname.lower():
                     target_file = fname
                     break
         
-        # 우선순위 1 실패 시 -> 가장 큰 XML 파일 선택 (데이터 파일일 확률 99%)
+        # 못 찾았으면 가장 큰 파일 선택
         if not target_file and xml_candidates:
-            print("⚠️ 'InfoTable' 파일을 못 찾음. 가장 큰 XML 파일을 선택합니다.", flush=True)
-            # 사이즈 역순 정렬
+            print("⚠️ 이름으로 못 찾아서 가장 큰 XML 파일을 선택합니다.", flush=True)
             xml_candidates.sort(key=lambda x: x['size'], reverse=True)
             target_file = xml_candidates[0]['name']
-            print(f"👉 선택된 파일: {target_file} ({xml_candidates[0]['size']} bytes)", flush=True)
 
         if not target_file:
-            print("❌ [치명적 오류] XML 파일을 아예 찾을 수 없습니다. (목록에 없음)")
-            print(f"📄 발견된 파일들: {[f['name'] for f in files]}")
+            print("❌ XML 파일을 아예 찾을 수 없습니다.")
             return
 
         # 최종 URL 확정
@@ -133,12 +139,16 @@ def fix_berkshire_manual():
                     value = 0
                     shares = 0
                     
-                    # 자식 노드 순회 (네임스페이스 무시)
                     for child in elem.iter():
                         ctag = child.tag.split("}")[-1]
                         if ctag == "nameOfIssuer": name = child.text
-                        elif ctag == "value": value = int(child.text) * 1000
-                        elif ctag == "sshPrnamt": shares = int(child.text)
+                        elif ctag == "value": 
+                            # 값도 빈칸일 수 있으니 방어
+                            try: value = int(child.text) * 1000
+                            except: value = 0
+                        elif ctag == "sshPrnamt": 
+                            try: shares = int(child.text)
+                            except: shares = 0
                     
                     if value > 0:
                         clean_ticker = name.split(" ")[0].replace(".", "").replace(",", "")
@@ -170,6 +180,15 @@ def fix_berkshire_manual():
         # 총 자산 확인
         total = db.execute(text(f"SELECT sum(value) FROM holdings WHERE institution_id = {inst.id}")).scalar()
         print(f"💰 현재 버크셔 총 자산: ${int(total):,}")
+        
+        # 검색 장부 자동 업데이트
+        try:
+            from update_cache import update_stock_summary
+            print("📚 검색 장부 업데이트 중...", flush=True)
+            update_stock_summary()
+            print("✅ 검색 기능까지 완료!")
+        except:
+            print("⚠️ 검색 장부 업데이트는 수동으로 해주세요.")
 
     except Exception as e:
         print(f"🔥 에러 발생: {e}", flush=True)
