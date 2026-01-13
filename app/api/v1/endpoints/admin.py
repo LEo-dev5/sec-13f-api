@@ -201,3 +201,51 @@ async def fix_names(db: Session = Depends(get_db), username: str = Depends(get_c
         return {"status": "success", "message": f"🔍 누락 데이터: {ghosts}개."}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+    
+@router.post("/update-search-index")
+async def update_search_index(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    print("🚀 [Admin] 검색 캐시 대규모 업데이트 요청됨...")
+    try:
+        # 1. 기존 요약 데이터 삭제
+        db.query(StockSummary).delete()
+        
+        # 2. 데이터 재압축 (조건 대폭 완화)
+        # 🚨 [수정] 티커 길이 12자리까지 허용 (JPM, BRK.B, O 등 모두 포함)
+        summary_query = (
+            db.query(
+                Holding.ticker,
+                func.max(Holding.name).label("name"),
+                func.sum(Holding.value).label("total_value"),
+                func.count(Holding.institution_id).label("holder_count")
+            )
+            .filter(Holding.ticker != None)
+            .filter(func.length(Holding.ticker) <= 12) # 👈 5 -> 12로 확장!
+            .group_by(Holding.ticker)
+            .all()
+        )
+        
+        # 3. DB 저장 (안전하게 변환)
+        summaries = []
+        for row in summary_query:
+            # 티커에 묻은 공백 제거 ("JPM " -> "JPM")
+            clean_ticker = row.ticker.strip().upper() if row.ticker else ""
+            
+            if clean_ticker:
+                summaries.append(StockSummary(
+                    ticker=clean_ticker,
+                    name=row.name,
+                    total_value=int(row.total_value) if row.total_value else 0,
+                    holder_count=row.holder_count
+                ))
+            
+        db.bulk_save_objects(summaries)
+        db.commit()
+        
+        msg = f"✅ 검색 인덱스 확장 완료! (총 {len(summaries)}개 종목)"
+        print(msg)
+        return {"status": "success", "message": msg}
+        
+    except Exception as e:
+        db.rollback()
+        print(f"🔥 업데이트 실패: {e}")
+        return {"status": "error", "message": str(e)}
