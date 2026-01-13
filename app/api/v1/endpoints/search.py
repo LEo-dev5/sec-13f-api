@@ -1,4 +1,5 @@
 # app/api/v1/endpoints/search.py
+
 from pathlib import Path
 from fastapi import APIRouter, Request, Query
 from fastapi.templating import Jinja2Templates
@@ -13,6 +14,23 @@ router = APIRouter()
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
 TEMPLATE_DIR = BASE_DIR / "app" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+
+
+@router.get("/")
+async def search_institutions(q: str = Query(...), db: Session = Depends(get_db)):
+    # 1. 기관명(Institution Name)에 검색어가 포함된 경우
+    # 2. 혹은 해당 기관이 보유한 종목의 티커(Ticker)가 검색어와 일치하는 경우
+    results = db.query(Institution).join(Holding).filter(
+        or_(
+            Institution.name.ilike(f"%{q}%"), # 기관명 부분 일치 (대소문자 무시)
+            Holding.ticker.ilike(f"{q}")      # 티커 완전 일치 (대소문자 무시)
+        )
+    ).distinct().all() # 중복 제거
+    
+    return results
+
+
 
 @router.get("/search")
 async def search_page(request: Request, q: str = Query("", min_length=1)):

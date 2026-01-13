@@ -19,13 +19,18 @@ class Holding(Base):
     __tablename__ = "holdings"
 
     id = Column(Integer, primary_key=True, index=True)
-    institution_id = Column(Integer, ForeignKey("institutions.id"))
+    
+    # 1. 특정 기관의 종목 리스트를 불러올 때 속도 개선 (상세페이지 로딩)
+    institution_id = Column(Integer, ForeignKey("institutions.id"), index=True) # 👈 index 추가!
     
     name = Column(String)
-    ticker = Column(String)
+    
+    # 2. 'TSLA' 검색 시 미친 듯이 빨라지게 하는 핵심 설정 (검색 결과 개선)
+    ticker = Column(String, index=True) # 👈 index 추가!
+    
     holding_type = Column(String)
     
-    # 🚨 [핵심 수정] Integer -> BigInteger로 변경!
+    # 🚨 BigInteger 유지
     shares = Column(BigInteger) 
     value = Column(BigInteger)
     
@@ -47,11 +52,11 @@ class Feedback(Base):
     content = Column(String)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-#방문자 기록 
 class VisitLog(Base):
     __tablename__ = "visit_logs"
 
     id = Column(Integer, primary_key=True, index=True)
     ip_address = Column(String)
-    path = Column(String) # 어떤 페이지를 봤는지
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    path = Column(String)
+    # 3. 날짜별 방문자 수 통계를 낼 때 빨라집니다.
+    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
