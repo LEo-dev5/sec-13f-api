@@ -1,12 +1,10 @@
-# app/api/v1/endpoints/search.py
-
 from pathlib import Path
-from fastapi import APIRouter, Request, Query
+from fastapi import APIRouter, Request, Query, Depends
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func, desc
 
-from app.db.database import SessionLocal
+from app.db.database import get_db, SessionLocal
 from app.db.models import Institution, Holding
 
 router = APIRouter()
@@ -15,26 +13,26 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
 TEMPLATE_DIR = BASE_DIR / "app" / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
 
+# 1. API용 엔드포인트 (자동완성이나 비동기 검색용)
+@router.get("/api")
+async def search_api(q: str = Query(...), db: Session = Depends(get_db)):
+    query = q.strip()
+    if not query:
+        return []
 
-
-@router.get("/")
-async def search_institutions(q: str = Query(...), db: Session = Depends(get_db)):
-    # 1. 기관명(Institution Name)에 검색어가 포함된 경우
-    # 2. 혹은 해당 기관이 보유한 종목의 티커(Ticker)가 검색어와 일치하는 경우
+    # 기관명에 포함되거나 티커가 일치하는 기관 검색
     results = db.query(Institution).join(Holding).filter(
         or_(
-            Institution.name.ilike(f"%{q}%"), # 기관명 부분 일치 (대소문자 무시)
-            Holding.ticker.ilike(f"{q}")      # 티커 완전 일치 (대소문자 무시)
+            Institution.name.ilike(f"%{query}%"),
+            Holding.ticker.ilike(f"{query}")
         )
-    ).distinct().all() # 중복 제거
+    ).distinct().limit(20).all()
     
     return results
 
-
-
+# 2. 실제 검색 결과 페이지 (HTML 렌더링)
 @router.get("/search")
-async def search_page(request: Request, q: str = Query("", min_length=1)):
-    db: Session = SessionLocal()
+async def search_page(request: Request, q: str = Query("", min_length=1), db: Session = Depends(get_db)):
     try:
         query = q.strip()
         if not query:
@@ -42,12 +40,23 @@ async def search_page(request: Request, q: str = Query("", min_length=1)):
                 "request": request, "query": "", "institutions": [], "stocks": []
             })
 
-        # 1. 기관 검색
-        institutions = db.query(Institution).filter(
-            Institution.name.ilike(f"%{query}%")
-        ).all()
+        # [수정 핵심] 1. 기관 검색: 이름 검색 + 티커 보유 여부 동시 검색
+        # 이제 'tsla'를 치면 테슬라를 가진 기관들이 여기서 잡힙니다.
+        institutions = (
+            db.query(Institution)
+            .join(Holding)
+            .filter(
+                or_(
+                    Institution.name.ilike(f"%{query}%"),
+                    Holding.ticker.ilike(f"{query}") # 티커와 일치하는 종목을 가진 기관
+                )
+            )
+            .distinct()
+            .limit(50) # 성능을 위해 제한
+            .all()
+        )
         
-        # 2. 종목 검색 (🚨 수정: 티커가 없는 '유령 데이터'는 제외!)
+        # 2. 종목 검색 (섹션 하단에 표시될 종목 리스트)
         stocks = (
             db.query(
                 func.max(Holding.name).label("name"), 
@@ -56,20 +65,18 @@ async def search_page(request: Request, q: str = Query("", min_length=1)):
                 func.sum(Holding.value).label("total_value")       
             )
             .filter(
-                # 검색어 조건
                 or_(
                     Holding.name.ilike(f"%{query}%"),
                     Holding.ticker.ilike(f"%{query}%")
                 )
             )
-            # 🚨 [핵심 추가] 티커가 비어있으면 링크가 깨지므로 결과에서 뺍니다.
             .filter(
                 Holding.ticker != None,
                 Holding.ticker != ""
             )
             .group_by(Holding.ticker)
             .order_by(desc("total_value"))
-            .limit(50)
+            .limit(20)
             .all()
         )
         
@@ -80,5 +87,8 @@ async def search_page(request: Request, q: str = Query("", min_length=1)):
             "stocks": stocks
         })
         
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"Search Error: {e}")
+        return templates.TemplateResponse("search_result.html", {
+            "request": request, "query": query, "institutions": [], "stocks": []
+        })
