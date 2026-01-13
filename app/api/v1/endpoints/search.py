@@ -92,7 +92,8 @@ KOREAN_KEYWORD_MAP = {
     "Ares Management": "ARES",
     "Brookfield Asset Management": "BAM",
     "ge버노바" : "GEV",
-              
+   
+           
     # 필요시 계속 추가
 }
 
@@ -178,3 +179,33 @@ async def search_page(request: Request, q: str = Query("", min_length=1), db: Se
         return templates.TemplateResponse("search_result.html", {
             "request": request, "query": q, "institutions": [], "stocks": []
         })
+    
+
+@router.get("/suggest")
+async def suggest_keywords(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    query = q.strip().upper() # 대문자로 변환
+    
+    # 1. 티커로 검색 (우선순위 높음)
+    # Holdings 테이블에서 티커가 일치하는 것 찾기 (중복 제거)
+    tickers = db.query(Holding.ticker, Holding.name)\
+        .filter(Holding.ticker.ilike(f"{query}%"))\
+        .distinct(Holding.ticker)\
+        .limit(5)\
+        .all()
+        
+    # 2. 기관명으로 검색
+    institutions = db.query(Institution.name)\
+        .filter(Institution.name.ilike(f"%{query}%"))\
+        .limit(5)\
+        .all()
+
+    results = []
+    
+    # 결과 포맷팅 (JSON으로 보낼 데이터)
+    for t in tickers:
+        results.append({"name": t.name, "ticker": t.ticker, "type": "stock"})
+        
+    for i in institutions:
+        results.append({"name": i.name, "ticker": None, "type": "institution"})
+        
+    return results
