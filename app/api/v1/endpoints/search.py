@@ -19,6 +19,7 @@ KOREAN_KEYWORD_MAP = {
     "버크셔": "BRK.B", "버크셔해서웨이": "BRK.B", "코카콜라": "KO", "펩시": "PEP"
 }
 
+# 1. HTML 검색 페이지 (주소: /search)
 @router.get("/search")
 async def search_page(request: Request, q: str = Query("", min_length=1), db: Session = Depends(get_db)):
     raw_query = q.strip()
@@ -29,12 +30,11 @@ async def search_page(request: Request, q: str = Query("", min_length=1), db: Se
         if not raw_query:
             return templates.TemplateResponse("search_result.html", {"request": request, "query": "", "institutions": [], "stocks": []})
 
-        # 1. 기관 검색 (이름 포함)
+        # 기관 검색
         inst_by_name = db.query(Institution).filter(
             or_(Institution.name.ilike(f"%{raw_query}%"), Institution.name.ilike(f"%{search_query}%"))
         ).limit(50).all()
 
-        # 2. 기관 검색 (보유 종목 티커로 역추적)
         inst_ids_by_ticker = db.query(Holding.institution_id).filter(Holding.ticker == ticker_query).distinct().all()
         target_ids = [i[0] for i in inst_ids_by_ticker]
         
@@ -44,7 +44,7 @@ async def search_page(request: Request, q: str = Query("", min_length=1), db: Se
 
         all_institutions = list({inst.id: inst for inst in (inst_by_name + inst_by_ticker)}.values())
 
-        # 3. 종목 검색 (🚨 강력한 필터링 적용)
+        # 종목 검색 (강력 필터 적용)
         stocks = (
             db.query(
                 func.max(Holding.name).label("name"), 
@@ -60,9 +60,9 @@ async def search_page(request: Request, q: str = Query("", min_length=1), db: Se
                 )
             )
             .filter(Holding.ticker != None)
-            .filter(Holding.ticker != "")           # 빈 문자열 제외
-            .filter(func.length(Holding.ticker) <= 5) # 🚨 5글자 넘으면 무조건 탈락 (TESLA MTRS... 제거)
-            .filter(~Holding.ticker.contains(" "))    # 🚨 공백 포함된 티커 제거
+            .filter(Holding.ticker != "")
+            .filter(func.length(Holding.ticker) <= 5) # 🚨 5글자 넘는 티커 제거 (중복 해결)
+            .filter(~Holding.ticker.contains(" "))    # 🚨 공백 포함 티커 제거
             .group_by(Holding.ticker)
             .order_by(desc("total_value"))
             .limit(20)
@@ -78,11 +78,13 @@ async def search_page(request: Request, q: str = Query("", min_length=1), db: Se
         print(f"Search Error: {e}")
         return templates.TemplateResponse("search_result.html", {"request": request, "query": q, "institutions": [], "stocks": []})
 
-@router.get("/suggest")
+# 2. 자동완성 API (주소: /api/v1/search/suggest)
+# 🚨 [수정] 프론트엔드 요청 주소와 정확히 일치시켰습니다.
+@router.get("/api/v1/search/suggest")
 async def suggest_keywords(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
     query = q.strip().upper()
     
-    # 자동완성도 동일한 필터 적용
+    # 자동완성에도 동일한 필터 적용
     tickers = db.query(Holding.ticker, Holding.name)\
         .filter(Holding.ticker.ilike(f"{query}%"))\
         .filter(func.length(Holding.ticker) <= 5)\

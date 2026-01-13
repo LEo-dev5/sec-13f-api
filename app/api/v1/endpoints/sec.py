@@ -18,22 +18,21 @@ async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db
         if not saved_inst:
              return templates.TemplateResponse("error.html", {"request": request, "message": "기관을 찾을 수 없습니다."})
 
-        # 🚨 [메모리 보호 핵심 코드]
-        # 전체를 가져오는 대신 상위 100개만 가져옵니다.
+        # 🚨 [메모리 보호] 상위 100개만 가져오기
         top_holdings = (
             db.query(Holding)
             .filter(Holding.institution_id == saved_inst.id)
             .order_by(desc(Holding.value))
-            .limit(100) # 👈 이 숫자가 램을 살립니다!
+            .limit(100) # 👈 이 숫자가 1GB 램을 지킵니다!
             .all()
         )
 
-        # 총 자산 가치는 DB에서 계산
+        # 총 자산 가치 별도 계산
         total_assets = db.query(func.sum(Holding.value)).filter(
             Holding.institution_id == saved_inst.id
         ).scalar() or 0
 
-        # 데이터 포맷팅
+        # 데이터 변환
         display_holdings = []
         for h in top_holdings:
             display_holdings.append({
@@ -59,8 +58,8 @@ async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db
         print(f"Dashboard Error: {e}")
         return templates.TemplateResponse("error.html", {"request": request, "message": "데이터 로딩 실패"})
 
-# ... (AI 분석 코드는 아래에 그대로 유지) ...
+# ... (AI 분석 함수는 기존 파일 내용 유지) ...
 @router.get("/dashboard/{cik}/ai-analysis")
 async def get_ai_analysis_endpoint(cik: str, db: Session = Depends(get_db)):
-    # (기존 코드 유지)
-    return {"analysis": "AI 분석 기능 준비 중"}
+    # 기존 코드 그대로 두세요
+    return {"analysis": "AI 분석 기능"}
