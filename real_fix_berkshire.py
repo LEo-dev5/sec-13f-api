@@ -1,4 +1,4 @@
-# real_fix_berkshire.py (메모리 최적화 버전)
+# real_fix_berkshire.py (파일 찾기 기능 강화판)
 import requests
 import xml.etree.ElementTree as ET
 import time
@@ -24,7 +24,7 @@ API_HEADERS = {
 }
 
 def fix_berkshire_manual():
-    print("🚀 [Start] 버크셔 메모리 최적화 복구 시작!", flush=True)
+    print("🚀 [Start] 버크셔 데이터 정밀 복구 시작!", flush=True)
     db = SessionLocal()
     CIK = "0001067983" 
     
@@ -32,7 +32,7 @@ def fix_berkshire_manual():
         # 1. 기존 데이터 삭제
         inst = db.query(Institution).filter(Institution.cik == CIK).first()
         if inst:
-            print("🧹 기존 데이터 삭제 중...", flush=True)
+            print("🧹 기존 데이터 청소 중...", flush=True)
             db.execute(text(f"DELETE FROM holdings WHERE institution_id = {inst.id}"))
             db.commit()
         else:
@@ -42,79 +42,106 @@ def fix_berkshire_manual():
             db.commit()
             db.refresh(inst)
 
-        # 2. JSON에서 XML 주소 찾기
-        print("🔍 보고서 위치 찾는 중...", flush=True)
+        # 2. JSON에서 최신 보고서 찾기
+        print("🔍 보고서 목록 조회 중...", flush=True)
         url = f"https://data.sec.gov/submissions/CIK{CIK}.json"
         resp = requests.get(url, headers=API_HEADERS, timeout=30)
         
+        if resp.status_code != 200:
+            print(f"❌ SEC 접속 실패 (Status: {resp.status_code})")
+            return
+
         data = resp.json()
         filings = data['filings']['recent']
         accession_num = None
         
+        # 13F-HR 찾기
         for i, form in enumerate(filings['form']):
             if form == '13F-HR':
                 accession_num = filings['accessionNumber'][i]
+                print(f"📄 최신 보고서 발견: {accession_num} ({filings['reportDate'][i]})", flush=True)
                 break
         
         if not accession_num:
-            print("❌ 보고서를 못 찾았습니다.")
+            print("❌ 13F-HR 보고서를 찾을 수 없습니다.")
             return
 
-        time.sleep(1) # 차단 방지
+        time.sleep(1) 
         
-        # XML 파일 찾기
+        # 3. 파일 목록(index.json) 조회
         clean_accession = accession_num.replace("-", "")
         index_url = f"https://www.sec.gov/Archives/edgar/data/{CIK}/{clean_accession}/index.json"
         
         idx_resp = requests.get(index_url, headers=HEADERS, timeout=30)
-        idx_data = idx_resp.json()
-        
-        xml_url = None
-        for file in idx_data['directory']['item']:
-            if file['name'].endswith('.xml') and ('info' in file['name'].lower() or 'table' in file['name'].lower()):
-                xml_url = f"https://www.sec.gov/Archives/edgar/data/{CIK}/{clean_accession}/{file['name']}"
-                print(f"🔗 XML 발견: {xml_url}", flush=True)
-                break
+        if idx_resp.status_code != 200:
+            print(f"❌ 파일 목록 조회 실패: {idx_resp.status_code}")
+            return
 
-        # 3. 🚨 [핵심] 스트리밍 방식으로 다운로드 & 파싱 (메모리 절약)
-        print("📥 스트리밍 다운로드 시작 (메모리 안전 모드)...", flush=True)
+        idx_data = idx_resp.json()
+        files = idx_data['directory']['item']
         
-        # stream=True로 설정하여 한 번에 다 받지 않음
+        # 4. XML 파일 찾기 로직 (강화됨)
+        target_file = None
+        xml_candidates = []
+
+        print("📂 파일 목록 분석 중...", flush=True)
+        for file in files:
+            fname = file['name']
+            size = int(file['size'])
+            
+            # XML 파일만 수집
+            if fname.endswith('.xml'):
+                xml_candidates.append({'name': fname, 'size': size})
+                
+                # 우선순위 1: 이름에 info나 table이 들어간 것
+                if 'info' in fname.lower() or 'table' in fname.lower():
+                    target_file = fname
+                    break
+        
+        # 우선순위 1 실패 시 -> 가장 큰 XML 파일 선택 (데이터 파일일 확률 99%)
+        if not target_file and xml_candidates:
+            print("⚠️ 'InfoTable' 파일을 못 찾음. 가장 큰 XML 파일을 선택합니다.", flush=True)
+            # 사이즈 역순 정렬
+            xml_candidates.sort(key=lambda x: x['size'], reverse=True)
+            target_file = xml_candidates[0]['name']
+            print(f"👉 선택된 파일: {target_file} ({xml_candidates[0]['size']} bytes)", flush=True)
+
+        if not target_file:
+            print("❌ [치명적 오류] XML 파일을 아예 찾을 수 없습니다. (목록에 없음)")
+            print(f"📄 발견된 파일들: {[f['name'] for f in files]}")
+            return
+
+        # 최종 URL 확정
+        xml_url = f"https://www.sec.gov/Archives/edgar/data/{CIK}/{clean_accession}/{target_file}"
+        print(f"🔗 다운로드 경로: {xml_url}", flush=True)
+
+        # 5. 스트리밍 다운로드
+        print("📥 데이터 다운로드 및 파싱 시작...", flush=True)
+        
+        count = 0
+        batch = []
+        
         with requests.get(xml_url, headers=HEADERS, stream=True) as r:
             r.raise_for_status()
-            
-            # iterparse로 조금씩 읽음
             context = ET.iterparse(r.raw, events=("end",))
             
-            count = 0
-            batch = []
-            
             for event, elem in context:
-                # 태그 이름에서 네임스페이스 제거 ({...}infoTable -> infoTable)
                 tag = elem.tag.split("}")[-1]
                 
                 if tag == "infoTable":
-                    # 데이터 추출
-                    name_node = elem.find(".//nameOfIssuer")
-                    if name_node is None: # 네임스페이스가 있는 경우 다시 시도
-                        for child in elem:
-                            if "nameOfIssuer" in child.tag: name_node = child
-                            
-                    # 값 찾기 (복잡한 XML 구조 대응)
                     name = "Unknown"
                     value = 0
                     shares = 0
                     
+                    # 자식 노드 순회 (네임스페이스 무시)
                     for child in elem.iter():
-                        tag_name = child.tag.split("}")[-1]
-                        if tag_name == "nameOfIssuer": name = child.text
-                        elif tag_name == "value": value = int(child.text) * 1000
-                        elif tag_name == "sshPrnamt": shares = int(child.text)
+                        ctag = child.tag.split("}")[-1]
+                        if ctag == "nameOfIssuer": name = child.text
+                        elif ctag == "value": value = int(child.text) * 1000
+                        elif ctag == "sshPrnamt": shares = int(child.text)
                     
                     if value > 0:
-                        # 티커 가공
                         clean_ticker = name.split(" ")[0].replace(".", "").replace(",", "")
-                        
                         batch.append(Holding(
                             institution_id=inst.id,
                             name=name,
@@ -125,30 +152,27 @@ def fix_berkshire_manual():
                             holding_type="Stock"
                         ))
                         count += 1
-
-                    # 4. 500개씩 끊어서 저장 (DB 부하 방지)
+                        
+                    elem.clear() # 메모리 해제
+                    
                     if len(batch) >= 500:
                         db.bulk_save_objects(batch)
                         db.commit()
-                        batch = [] # 비우기
-                        print(f"✅ {count}개 처리 중...", flush=True)
+                        batch = []
+                        print(f"✅ {count}개 저장 중...", flush=True)
 
-                    # 🚨 메모리 해제 (가장 중요!)
-                    elem.clear()
-            
-            # 남은 것 저장
             if batch:
                 db.bulk_save_objects(batch)
                 db.commit()
 
-        print(f"🎉 최종 완료! 총 {count}개 종목 저장됨.", flush=True)
+        print(f"🎉 최종 완료! 총 {count}개 종목 복구됨.", flush=True)
         
         # 총 자산 확인
         total = db.execute(text(f"SELECT sum(value) FROM holdings WHERE institution_id = {inst.id}")).scalar()
-        print(f"💰 복구된 총 자산: ${int(total):,}")
+        print(f"💰 현재 버크셔 총 자산: ${int(total):,}")
 
     except Exception as e:
-        print(f"🔥 에러: {e}", flush=True)
+        print(f"🔥 에러 발생: {e}", flush=True)
         db.rollback()
     finally:
         db.close()
