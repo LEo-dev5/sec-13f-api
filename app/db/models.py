@@ -13,7 +13,7 @@ class Institution(Base):
     name = Column(String)
     report_calendar_or_quarter = Column(String)
     
-    # 🌟 [여기 추가됨!] VIP 기관 표시 (JP모건 등을 따로 관리하기 위함)
+    # 🌟 [필수] VIP 기관 표시 (이게 없어서 아까 에러남)
     is_featured = Column(Boolean, default=False)
 
     # 설명 및 AI 요약
