@@ -2,7 +2,7 @@ import asyncio
 import os
 import secrets
 import random
-import gc  # 🧹 [추가] 쓰레기 청소부(Garbage Collector)
+import gc
 from pathlib import Path
 from fastapi import APIRouter, Request, Depends, HTTPException, status, BackgroundTasks
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 from datetime import timedelta, datetime
 
 from app.db.database import get_db, SessionLocal
-from app.db.models import Institution, Insight, Feedback, VisitLog
+from app.db.models import Institution, Insight, Feedback, VisitLog, StockSummary, Holding
 from app.services.sec_service import fetch_all_13f_ciks
 from app.services.db_service import update_institution_to_db
 
@@ -22,13 +22,17 @@ router = APIRouter()
 security = HTTPBasic()
 templates = Jinja2Templates(directory="app/templates")
 
-# 🌟 [TOP 20] 유명 기관 리스트
+# 🌟 [수정] JP모건, 골드만삭스, 모건스탠리 등 대형 기관 추가!
 TOP_FUNDS = [
     ("0001067983", "BERKSHIRE HATHAWAY INC"), 
     ("0001350694", "BRIDGEWATER ASSOCIATES, LP"), 
     ("0001649339", "SCION ASSET MANAGEMENT, LLC"), 
     ("000102909", "VANGUARD GROUP INC"),
     ("0001364742", "BLACKROCK INC"),
+    ("0000019617", "JPMORGAN CHASE & CO"),      # 👈 추가됨!
+    ("0000895421", "MORGAN STANLEY"),           # 👈 추가됨!
+    ("0000886982", "GOLDMAN SACHS GROUP INC"),  # 👈 추가됨!
+    ("0000070858", "BANK OF AMERICA CORP"),     # 👈 추가됨!
     ("0001166559", "GATES BILL & MELINDA FOUNDATION"),
     ("0001103804", "Viking Global Investors Lp"),
     ("0001540531", "TIGER GLOBAL MANAGEMENT LLC"),
@@ -171,6 +175,53 @@ async def run_crawler_process_all():
 async def update_all(background_tasks: BackgroundTasks, username: str = Depends(get_current_username)):
     background_tasks.add_task(run_crawler_process_all)
     return {"status": "success", "message": "⚠️ 안전 모드로 천천히 수집합니다. (메모리 보호)"}
+
+@router.post("/update-search-index")
+async def update_search_index(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    print("🚀 [Admin] 검색 캐시 대규모 업데이트 요청됨...")
+    try:
+        StockSummary.__table__.create(bind=SessionLocal().get_bind(), checkfirst=True)
+        db.query(StockSummary).delete()
+        
+        # 조건 없이 모든 종목 긁어모으기
+        summary_query = (
+            db.query(
+                Holding.ticker,
+                func.max(Holding.name).label("name"),
+                func.sum(Holding.value).label("total_value"),
+                func.count(Holding.institution_id).label("holder_count")
+            )
+            .filter(Holding.ticker != None)
+            .filter(Holding.ticker != "")
+            .group_by(Holding.ticker)
+            .all()
+        )
+        
+        summaries = []
+        for row in summary_query:
+            clean_ticker = row.ticker.strip().upper()
+            clean_name = row.name if row.name else clean_ticker
+
+            if 0 < len(clean_ticker) < 20:
+                summaries.append(StockSummary(
+                    ticker=clean_ticker,
+                    name=clean_name,
+                    total_value=int(row.total_value) if row.total_value else 0,
+                    holder_count=row.holder_count
+                ))
+            
+        db.bulk_save_objects(summaries)
+        db.commit()
+        
+        msg = f"✅ 검색 인덱스 업데이트 완료! (총 {len(summaries)}개 종목)"
+        print(msg)
+        return {"status": "success", "message": msg}
+        
+    except Exception as e:
+        db.rollback()
+        print(f"🔥 업데이트 실패: {e}")
+        return {"status": "error", "message": str(e)}
+
 
 # ... (유지보수 코드는 그대로) ...
 @router.delete("/feedback/{feedback_id}")
