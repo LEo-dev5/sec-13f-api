@@ -1,5 +1,5 @@
-# 🚨 맨 윗줄에 Index, BigInteger가 반드시 있어야 합니다!
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index, BigInteger, Text, Float
+# app/db/models.py (최종 수정본)
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index, BigInteger, Text, Float, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.db.database import Base
@@ -13,7 +13,10 @@ class Institution(Base):
     name = Column(String)
     report_calendar_or_quarter = Column(String)
     
-    # AI 요약, 설명 등
+    # 🌟 [여기 추가됨!] VIP 기관 표시 (JP모건 등을 따로 관리하기 위함)
+    is_featured = Column(Boolean, default=False)
+
+    # 설명 및 AI 요약
     description = Column(Text, nullable=True)
     ai_summary = Column(Text, nullable=True)
     
@@ -65,16 +68,15 @@ class VisitLog(Base):
     path = Column(String)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
 
-# 6. 종목 요약표 (StockSummary) - 여기가 에러 원인이었음
+# 6. 종목 요약표 (StockSummary)
 class StockSummary(Base):
     __tablename__ = "stock_summaries"
 
     ticker = Column(String, primary_key=True, index=True)
     name = Column(String)       
-    total_value = Column(BigInteger) # 여기 BigInteger 필요
+    total_value = Column(BigInteger)
     holder_count = Column(Integer)   
     
-    # 검색 속도를 위한 인덱스 (여기 Index 필요)
     __table_args__ = (
         Index('idx_stock_summary_name', 'name'),
     )
