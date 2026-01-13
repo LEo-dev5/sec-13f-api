@@ -5,58 +5,67 @@ import time
 import sys
 import os
 
-# Render DB 연결 설정을 위해 경로 추가
+# Render DB 연결 설정
 sys.path.append(os.getcwd())
 from sqlalchemy import text
-from app.db.database import SessionLocal, engine
+from app.db.database import SessionLocal
 from app.db.models import Institution, Holding
-from update_cache import update_stock_summary
+try:
+    from update_cache import update_stock_summary
+except ImportError:
+    update_stock_summary = None
 
-# 🚨 SEC가 차단하지 못하도록 '진짜 사람처럼' 보이는 헤더 사용
+# 🚨 [핵심 수정] SEC가 좋아하는 형식의 신분증(User-Agent)으로 변경
+# 형식: 앱이름/버전 (이메일주소)
 HEADERS = {
-    "User-Agent": "MyInvestmentResearch/1.0 (contact@research.com)",
+    "User-Agent": "Easy13F_Analyzer/2.0 (admin@easy13f.com)",
+    "Accept-Encoding": "gzip, deflate",
+    "Host": "www.sec.gov" 
+}
+# data.sec.gov용 헤더는 Host가 다를 수 있어서 분리
+API_HEADERS = {
+    "User-Agent": "Easy13F_Analyzer/2.0 (admin@easy13f.com)",
     "Accept-Encoding": "gzip, deflate",
     "Host": "data.sec.gov"
 }
 
 def fix_berkshire_manual():
-    print("🚑 [버크셔] 독립형 강제 복구 스크립트 시작...")
+    print("🚑 [버크셔] 독립형 강제 복구 스크립트 (보안 강화판) 시작...")
     db = SessionLocal()
-    CIK = "0001067983" # 버크셔 CIK
+    CIK = "0001067983" 
     
     try:
         # 1. 기존 데이터 삭제
-        print("🧹 기존 데이터 청소 중...")
         inst = db.query(Institution).filter(Institution.cik == CIK).first()
         if inst:
+            print("🧹 기존 데이터 청소 중...")
             db.execute(text(f"DELETE FROM holdings WHERE institution_id = {inst.id}"))
             db.commit()
-            print("🗑️ 0달러 데이터 삭제 완료.")
         else:
-            print("✨ 기관 정보가 없어서 새로 만듭니다.")
+            print("✨ 기관 정보 생성 중...")
             inst = Institution(cik=CIK, name="BERKSHIRE HATHAWAY INC", is_featured=True)
             db.add(inst)
             db.commit()
             db.refresh(inst)
 
         # 2. 최신 13F 보고서 찾기 (JSON API)
-        print("🔍 최신 보고서(13F-HR) 위치 찾는 중...")
+        print("🔍 [1단계] 최신 보고서(13F-HR) 찾는 중...")
         url = f"https://data.sec.gov/submissions/CIK{CIK}.json"
-        resp = requests.get(url, headers=HEADERS, timeout=30)
         
+        # 🚨 에러 확인 로직 추가
+        resp = requests.get(url, headers=API_HEADERS, timeout=30)
         if resp.status_code != 200:
-            raise Exception(f"SEC 접속 실패: {resp.status_code}")
+            print(f"🔥 [1단계 실패] 상태 코드: {resp.status_code}")
+            print(f"내용: {resp.text[:200]}") # 에러 내용 일부 출력
+            return
             
         data = resp.json()
         filings = data['filings']['recent']
         
         accession_num = None
-        primary_doc = None
-        
         for i, form in enumerate(filings['form']):
-            if form == '13F-HR': # 13F-HR이 정기 보고서 (Amendment 아님)
+            if form == '13F-HR':
                 accession_num = filings['accessionNumber'][i]
-                primary_doc = filings['primaryDocument'][i]
                 report_date = filings['reportDate'][i]
                 print(f"📄 찾았다! 보고서 번호: {accession_num} (날짜: {report_date})")
                 break
@@ -65,55 +74,67 @@ def fix_berkshire_manual():
             raise Exception("13F-HR 보고서를 찾을 수 없습니다.")
 
         # 3. XML 파일 주소 만들기
-        # SEC 주소 규칙: accessionNumber에서 '-' 제거한 폴더 안에 있음
-        clean_accession = accession_num.replace("-", "")
+        # SEC는 요청을 너무 빨리 보내면 차단하므로 1초 쉼
+        time.sleep(1) 
         
-        # 3-1. index.json에서 infoTable(보유종목표) XML 찾기
+        clean_accession = accession_num.replace("-", "")
         index_url = f"https://www.sec.gov/Archives/edgar/data/{CIK}/{clean_accession}/index.json"
+        
+        print(f"🔍 [2단계] XML 주소 찾는 중... ({index_url})")
         idx_resp = requests.get(index_url, headers=HEADERS, timeout=30)
+        
+        # 🚨 여기서 에러나면 내용 출력
+        if idx_resp.status_code != 200:
+            print(f"🔥 [2단계 실패] 상태 코드: {idx_resp.status_code}")
+            print(f"내용: {idx_resp.text[:300]}") # HTML 에러 메시지 확인
+            return
+
         idx_data = idx_resp.json()
         
         xml_url = None
         for file in idx_data['directory']['item']:
-            # 보통 xml 파일이고 이름에 'info'나 'table'이 들어감
             if file['name'].endswith('.xml') and ('info' in file['name'].lower() or 'table' in file['name'].lower()):
                 xml_url = f"https://www.sec.gov/Archives/edgar/data/{CIK}/{clean_accession}/{file['name']}"
-                print(f"🔗 보유 종목 XML 발견: {xml_url}")
+                print(f"🔗 발견된 XML: {xml_url}")
                 break
         
         if not xml_url:
-            raise Exception("보유 종목 XML 파일(InfoTable)을 못 찾았습니다.")
+            raise Exception("XML 파일을 못 찾았습니다.")
 
         # 4. XML 다운로드 및 파싱
-        print("📥 XML 데이터 다운로드 및 분석 중...")
-        xml_resp = requests.get(xml_url, headers=HEADERS, timeout=60) # 타임아웃 60초
-        xml_content = xml_resp.content
+        print("📥 [3단계] 데이터 다운로드 및 분석 중...")
+        time.sleep(1) # 또 1초 쉼 (차단 방지)
         
-        root = ET.fromstring(xml_content)
-        # 네임스페이스 제거 (파싱 쉽게 하기 위해)
+        xml_resp = requests.get(xml_url, headers=HEADERS, timeout=60)
+        root = ET.fromstring(xml_resp.content)
+        
+        # 네임스페이스 처리
         ns_map = {'ns': root.tag.split('}')[0].strip('{')} if '}' in root.tag else {}
         
         holdings = []
         for info in root.findall('.//ns:infoTable', ns_map) if ns_map else root.findall('.//infoTable'):
-            # 데이터 추출
             name_node = info.find('ns:nameOfIssuer', ns_map) if ns_map else info.find('nameOfIssuer')
             val_node = info.find('ns:value', ns_map) if ns_map else info.find('value')
             shrs_node = info.find('ns:shrsOrPrnAmt', ns_map) if ns_map else info.find('shrsOrPrnAmt')
             ssh_node = shrs_node.find('ns:sshPrnamt', ns_map) if ns_map else shrs_node.find('sshPrnamt')
-            ticker_node = info.find('ns:cusip', ns_map) if ns_map else info.find('cusip') # 티커 대신 CUSIP 쓰는 경우가 많음
+            
+            # 티커(CUSIP) 태그 찾기 시도
+            cusip_node = info.find('ns:cusip', ns_map) if ns_map else info.find('cusip')
 
             name = name_node.text if name_node is not None else "Unknown"
-            value = int(val_node.text) * 1000 if val_node is not None else 0 # 단위가 $1000임
+            value = int(val_node.text) * 1000 if val_node is not None else 0
             shares = int(ssh_node.text) if ssh_node is not None else 0
-            cusip = ticker_node.text if ticker_node is not None else ""
+            cusip = cusip_node.text if cusip_node is not None else ""
 
-            # 최소한의 데이터 유효성 검사
             if value > 0:
+                # 간단하게 이름 첫 단어를 티커로 (나중에 DB 맵핑으로 보정됨)
+                fake_ticker = name.split(" ")[0].replace(".", "").replace(",", "")
+                
                 holdings.append(Holding(
                     institution_id=inst.id,
                     name=name,
                     name_of_issuer=name,
-                    ticker=name.split(" ")[0], # 임시로 이름 첫 단어를 티커로 (나중에 DB 맵핑으로 보정)
+                    ticker=fake_ticker, 
                     value=value,
                     shares=shares,
                     cusip=cusip,
@@ -127,20 +148,15 @@ def fix_berkshire_manual():
         db.bulk_save_objects(holdings)
         db.commit()
         
-        # 총 자산 확인
         total = db.execute(text(f"SELECT sum(value) FROM holdings WHERE institution_id = {inst.id}")).scalar()
-        print(f"💰 [성공] 버크셔 총 자산 복구 완료: ${int(total):,}")
+        print(f"💰 [성공] 복구 완료! 총 자산: ${int(total):,}")
         
         # 6. 검색 장부 업데이트
-        print("📚 검색 장부 최신화...")
-        update_stock_summary()
-        print("🎉 모든 작업 완료!")
+        if update_stock_summary:
+            print("📚 검색 장부 업데이트...")
+            update_stock_summary()
+            print("✅ 완료!")
 
     except Exception as e:
-        print(f"🔥 실패 원인: {e}")
+        print(f"🔥 스크립트 에러: {e}")
         db.rollback()
-    finally:
-        db.close()
-
-if __name__ == "__main__":
-    fix_berkshire_manual()
