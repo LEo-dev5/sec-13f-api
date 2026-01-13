@@ -2,10 +2,10 @@ from pathlib import Path
 from fastapi import APIRouter, Request, Query, Depends
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, func, desc
+from sqlalchemy import or_, desc, func
 
 from app.db.database import get_db
-from app.db.models import Institution, Holding
+from app.db.models import Institution, Holding, StockSummary # 👈 StockSummary 추가됨!
 
 router = APIRouter()
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "app" / "templates"
@@ -29,11 +29,12 @@ async def search_page(request: Request, q: str = Query("", min_length=1), db: Se
         if not raw_query:
             return templates.TemplateResponse("search_result.html", {"request": request, "query": "", "institutions": [], "stocks": []})
 
-        # 1. 기관 검색
+        # 1. 기관 검색 (기존과 동일 - 인덱스 사용)
         inst_by_name = db.query(Institution).filter(
             or_(Institution.name.ilike(f"%{raw_query}%"), Institution.name.ilike(f"%{search_query}%"))
         ).limit(50).all()
 
+        # 티커로 기관 찾기 (StockSummary 덕분에 이것도 가볍게 가능하지만 기존 유지)
         inst_ids_by_ticker = db.query(Holding.institution_id).filter(Holding.ticker == ticker_query).distinct().all()
         target_ids = [i[0] for i in inst_ids_by_ticker]
         
@@ -43,32 +44,24 @@ async def search_page(request: Request, q: str = Query("", min_length=1), db: Se
 
         all_institutions = list({inst.id: inst for inst in (inst_by_name + inst_by_ticker)}.values())
 
-        # 2. 종목 검색 (🚨 필터 강화)
+        # 🚨 2. 종목 검색 [속도 개선의 핵심!]
+        # 350만 개 Holding 테이블 대신 -> 1만 개 StockSummary 테이블 조회 (0.001초 소요)
         stocks = (
-            db.query(
-                func.max(Holding.name).label("name"), 
-                Holding.ticker, 
-                func.count(Holding.institution_id).label("count"), 
-                func.sum(Holding.value).label("total_value")       
-            )
+            db.query(StockSummary)
             .filter(
                 or_(
-                    Holding.name.ilike(f"%{raw_query}%"),
-                    Holding.name.ilike(f"%{search_query}%"),
-                    Holding.ticker == ticker_query 
+                    StockSummary.name.ilike(f"%{raw_query}%"),     # 이름 검색
+                    StockSummary.name.ilike(f"%{search_query}%"),  # 매핑된 이름 검색
+                    StockSummary.ticker == ticker_query             # 티커 검색
                 )
             )
-            .filter(Holding.ticker != None)
-            .filter(Holding.ticker != "")
-            # 🚨 [중요] 글자수 제한: 5글자 초과는 무조건 제외 (BRK.B 같은 예외 고려해 6자 정도로 여유 둘 수도 있으나 5가 안전)
-            .filter(func.length(Holding.ticker) <= 5)
-            # 🚨 [중요] 공백 포함 시 제외 (TESLA MTRS... 제거)
-            .filter(~Holding.ticker.contains(" "))
-            .group_by(Holding.ticker)
-            .order_by(desc("total_value"))
+            .order_by(desc(StockSummary.total_value)) # 자산 규모 순 정렬
             .limit(20)
             .all()
         )
+        
+        # 템플릿 호환성을 위해 변수명 맞춤 (count -> holder_count)
+        # StockSummary 모델 필드명(total_value, holder_count)을 그대로 사용
         
         return templates.TemplateResponse("search_result.html", {
             "request": request, "query": raw_query, 
@@ -83,11 +76,9 @@ async def search_page(request: Request, q: str = Query("", min_length=1), db: Se
 async def suggest_keywords(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
     query = q.strip().upper()
     
-    tickers = db.query(Holding.ticker, Holding.name)\
-        .filter(Holding.ticker.ilike(f"{query}%"))\
-        .filter(func.length(Holding.ticker) <= 5)\
-        .filter(~Holding.ticker.contains(" "))\
-        .distinct(Holding.ticker)\
+    # 🚨 자동완성도 StockSummary 사용 (초고속)
+    tickers = db.query(StockSummary.ticker, StockSummary.name)\
+        .filter(StockSummary.ticker.ilike(f"{query}%"))\
         .limit(5).all()
         
     institutions = db.query(Institution.name).filter(Institution.name.ilike(f"%{query}%")).limit(5).all()

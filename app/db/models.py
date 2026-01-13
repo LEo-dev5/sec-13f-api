@@ -60,3 +60,16 @@ class VisitLog(Base):
     path = Column(String)
     # 3. 날짜별 방문자 수 통계를 낼 때 빨라집니다.
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+
+class StockSummary(Base):
+    __tablename__ = "stock_summaries"
+
+    ticker = Column(String, primary_key=True, index=True) # 티커 (PK)
+    name = Column(String)       # 종목명 (대표 이름)
+    total_value = Column(BigInteger) # 총 보유 평가액 합계
+    holder_count = Column(Integer)   # 보유 기관 수
+    
+    # 검색 속도를 위한 인덱스 (검색할 때 이름도 봅니다)
+    __table_args__ = (
+        Index('idx_stock_summary_name', 'name'),
+    )
