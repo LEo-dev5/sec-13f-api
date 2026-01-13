@@ -6,6 +6,7 @@ from app.db.models import Institution, Holding
 from app.services.sec_service import fetch_latest_13f
 from app.services.ai_service import analyze_portfolio_by_llm
 from app.services.wiki_service import get_company_description
+from sqlalchemy import desc, func # 👈 func 추가 (총 자산 계산용)
 
 router = APIRouter()
 
@@ -17,16 +18,17 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/dashboard/{cik}")
 async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db)):
     institution_name = ""
-    report_date = "2025-09-30" # 🚨 [수정] 날짜가 비어있지 않도록 기본값 설정
+    report_date = "2025-09-30" 
     description_text = ""
     display_holdings = []
+    total_assets = 0 # 총 자산 변수 추가
     
     try:
         # 1. DB 확인
         saved_inst = db.query(Institution).filter(Institution.cik == cik).first()
         
         if saved_inst:
-            # 이름 복구 로직
+            # 이름 복구 로직 (기존 유지)
             if not saved_inst.name:
                 try:
                     fresh_data = await fetch_latest_13f(cik)
@@ -37,41 +39,60 @@ async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db
             
             institution_name = saved_inst.name
             
-            # 설명 가져오기
+            # 설명 가져오기 (기존 유지)
             if saved_inst.description:
                 description_text = saved_inst.description
 
-            # 보유종목 변환
-            if saved_inst.holdings:
-                for h in saved_inst.holdings:
-                    display_holdings.append({
-                        "display_name": getattr(h, "name", getattr(h, "name_of_issuer", "Unknown")),
-                        "ticker": h.ticker,
-                        "value": h.value,
-                        "shares": h.shares,
-                        "change_rate": h.change_rate,
-                        "holding_type": h.holding_type,
-                    })
+            # 🚨 [핵심 수정] 메모리 폭발 방지 로직
+            # 기존: for h in saved_inst.holdings: (전체 로드 -> 램 부족)
+            # 변경: DB에서 상위 100개만 쿼리하여 가져옴
+            
+            # A. 상위 100개 종목 가져오기
+            top_holdings = db.query(Holding).filter(
+                Holding.institution_id == saved_inst.id
+            ).order_by(desc(Holding.value)).limit(100).all()
+
+            # B. 총 자산 가치 별도 계산 (전체 합산)
+            # 100개만 가져왔으므로 전체 합계는 DB에 계산을 시켜야 정확함
+            total_assets = db.query(func.sum(Holding.value)).filter(
+                Holding.institution_id == saved_inst.id
+            ).scalar() or 0
+
+            # 리스트에 담기
+            for h in top_holdings:
+                display_holdings.append({
+                    "display_name": getattr(h, "name", getattr(h, "name_of_issuer", "Unknown")),
+                    "ticker": h.ticker,
+                    "value": h.value,
+                    "shares": h.shares,
+                    "change_rate": h.change_rate,
+                    "holding_type": h.holding_type,
+                })
+
         else:
-            # DB에 없으면 크롤링
+            # DB에 없으면 크롤링 (기존 로직 유지)
             filing_data = await fetch_latest_13f(cik)
             institution_name = filing_data.institution_name
-            # 🚨 크롤링 데이터에 날짜가 있다면 업데이트 (없으면 위 기본값 사용)
             if filing_data.period_of_report:
                 report_date = filing_data.period_of_report
 
+            # 크롤링 데이터도 100개만
             for h in filing_data.holdings[:100]:
                 h_dict = h.dict()
                 h_dict['display_name'] = h.name_of_issuer
                 display_holdings.append(h_dict)
+                # 크롤링한 데이터에서 총 자산 계산
+                if h.value:
+                    total_assets += h.value
 
         return templates.TemplateResponse("dashboard.html", {
             "request": request,
             "cik": cik,
             "institution_name": institution_name,
-            "report_date": report_date, # 이제 값이 들어갑니다!
+            "report_date": report_date,
             "holdings": display_holdings,
-            "description": description_text
+            "description": description_text,
+            "total_assets": total_assets # 템플릿에서 총 자산 표시 가능하도록 추가
         })
         
     except Exception as e:
@@ -82,11 +103,12 @@ async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db
             "institution_name": "Error Loading Data",
             "report_date": "-",
             "holdings": [],
-            "description": ""
+            "description": "",
+            "total_assets": 0
         })
 
 # ==========================================
-# 2. 🤖 AI 분석 API
+# 2. 🤖 AI 분석 API (기존 유지)
 # ==========================================
 @router.get("/dashboard/{cik}/ai-analysis")
 async def get_ai_analysis_endpoint(cik: str, db: Session = Depends(get_db)):
