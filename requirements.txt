@@ -10,3 +10,4 @@ pandas
 lxml
 python-multipart
 yfinance
+psycopg2-binary==2.9.9
