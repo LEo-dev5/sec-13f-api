@@ -1,0 +1,3071 @@
+=== PROJECT DIRECTORY STRUCTURE ===
+Easy13F/
+    add_column.py
+    .DS_Store
+    requirements.txt
+    check_models.py
+    test1.py
+    13f_data.db
+    .gitignore
+    .env
+    main.py
+    add_description_column.py
+    add_gurus.py
+    create_db.py
+    app/
+        .DS_Store
+        __init__.py
+        core/
+            config.py
+        schemas/
+            stock.py
+        static/
+            uploads/
+        db/
+            models.py
+            database.py
+        api/
+            .DS_Store
+            v1/
+                .DS_Store
+                endpoints/
+                    .DS_Store
+                    home.py
+                    feedback.py
+                    stock.py
+                    admin.py
+                    sec.py
+                    search.py
+                    insights.py
+        templates/
+            index.html
+            .DS_Store
+            admin.html
+            stock_detail.html
+            admin_upload.html
+            dashboard.html
+            error.html
+            admin_dashboard.html
+            search_result.html
+        services/
+            stock_service.py
+            ai_service.py
+            wiki_service.py
+            sec_service.py
+            ticker_service.py
+            stock_name_service.py
+            db_service.py
+
+
+=== FILE CONTENTS ===
+
+
+==================================================
+FILE PATH: add_column.py
+==================================================
+# add_column.py
+import sqlite3
+
+# DB 파일 이름이 '13f_data.db'라고 가정합니다. (다르면 수정하세요)
+DB_FILE = "13f_data.db"
+
+conn = sqlite3.connect(DB_FILE)
+cursor = conn.cursor()
+
+try:
+    print("🛠️ DB 업그레이드 시작...")
+    # institutions 테이블에 ai_summary 컬럼 추가
+    cursor.execute("ALTER TABLE institutions ADD COLUMN ai_summary TEXT")
+    conn.commit()
+    print("✅ 성공! 'ai_summary' 컬럼이 추가되었습니다.")
+except sqlite3.OperationalError as e:
+    print(f"ℹ️ 알림: {e}")
+    print("   (이미 컬럼이 존재하거나 문제가 없습니다.)")
+finally:
+    conn.close()
+
+==================================================
+FILE PATH: requirements.txt
+==================================================
+fastapi
+uvicorn
+sqlalchemy
+jinja2
+python-dotenv
+requests
+httpx
+psycopg2-binary
+pandas
+lxml
+python-multipart
+yfinance
+
+==================================================
+FILE PATH: check_models.py
+==================================================
+# check_models.py (최신 google-genai 라이브러리 호환)
+from google import genai
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+api_key = os.getenv("GOOGLE_API_KEY")
+
+if not api_key:
+    print("❌ API 키가 없습니다. .env 파일을 확인하세요.")
+else:
+    print(f"🔑 현재 적용된 API Key: ...{api_key[-4:]}") # 키 뒷자리 확인
+    
+    try:
+        client = genai.Client(api_key=api_key)
+        print("\n📋 [내 키로 사용 가능한 모델 목록]")
+        print("-" * 40)
+        
+        # 새 라이브러리에서는 속성 이름이 다를 수 있으므로 안전하게 이름만 출력
+        count = 0
+        for m in client.models.list():
+            # 모델 이름에 'gemini'가 포함된 것만 필터링해서 보기 좋게 출력
+            if "gemini" in m.name:
+                print(f"✅ {m.name}")
+                count += 1
+                
+        if count == 0:
+            print("⚠️ 'gemini' 모델이 하나도 안 보입니다. API 키 설정을 확인하세요.")
+            
+        print("-" * 40)
+        
+    except Exception as e:
+        print(f"🔥 목록 조회 실패: {e}")
+        print("👉 팁: API 키가 올바른지, Google AI Studio에서 'Get API key'를 다시 확인하세요.")
+
+==================================================
+FILE PATH: test1.py
+==================================================
+# Easy13F/test.py
+import asyncio
+from app.services.sec_service import fetch_latest_13f
+
+# 비동기 함수를 실행하기 위한 껍데기
+async def main():
+    try:
+        # 워렌 버핏의 버크셔 해서웨이 CIK
+        cik = "0001067983" 
+        print(f"CIK {cik} 데이터 수집 시작...")
+        
+# ... (앞부분 동일) ...
+
+        result = await fetch_latest_13f(cik)
+        
+        print(f"보고서 날짜: {result.report_date}")
+        print(f"가져온 종목 수: {len(result.holdings)}개")
+        
+        if result.holdings:  # 👈 데이터가 있을 때만 출력하도록 조건문 추가
+            print("첫 번째 종목 샘플:", result.holdings[0])
+        else:
+            print("데이터가 없습니다. (URL 문제거나 Cover Page만 가져왔을 수 있음)")
+            
+# ... (뒷부분 동일) ...
+        
+    except Exception as e:
+        print(f"에러 발생: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+==================================================
+FILE PATH: .gitignore
+==================================================
+# .gitignore 내용
+.env
+.env.local
+venv/
+__pycache__/
+*.pyc
+.DS_Store
+*.db
+
+==================================================
+FILE PATH: .env
+==================================================
+# 이 파일은 절대 깃허브에 올리면 안 됩니다! (.gitignore에 추가)
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=moneycopy1234
+
+
+GOOGLE_API_KEY=AIzaSyC2mu6ffhYnY08SFb2x-CmW1WQ0A0BNXOI
+
+==================================================
+FILE PATH: main.py
+==================================================
+import os
+from fastapi import FastAPI, Request
+from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
+
+from app.db.database import engine, Base, SessionLocal
+from app.db.models import VisitLog
+
+# 모든 라우터 가져오기
+from app.api.v1.endpoints import home, search, sec, insights, feedback, admin, stock
+
+is_production = os.getenv("RENDER") is not None
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    print("🚀 [System] 서버 부팅 중...")
+    try:
+        Base.metadata.create_all(bind=engine)
+    except: pass
+    yield
+    print("👋 [System] 서버 종료")
+
+app = FastAPI(lifespan=lifespan, docs_url=None if is_production else "/docs")
+
+# 방문자 로깅
+@app.middleware("http")
+async def log_visits(request: Request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith(("/static", "/admin", "/favicon")):
+        try:
+            db = SessionLocal()
+            # ... (기존 로깅 로직 있다면 유지, 없으면 생략 가능) ...
+            db.close()
+        except: pass
+    return response
+
+os.makedirs("app/static/uploads", exist_ok=True)
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+# 🚨 [라우터 등록 최종 정리]
+app.include_router(home.router, tags=["Home"])
+# search.py 안에 주소가 /search, /api/v1/search/suggest로 되어있으므로 prefix 없이 등록
+app.include_router(search.router, tags=["Search"]) 
+app.include_router(stock.router, tags=["Stock"]) # /stock/{ticker}
+app.include_router(sec.router, prefix="/api/v1/sec", tags=["SEC"])
+app.include_router(insights.router, prefix="/api/v1/insights", tags=["Insights"])
+app.include_router(feedback.router, prefix="/api/v1/feedback", tags=["Feedback"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+
+==================================================
+FILE PATH: add_description_column.py
+==================================================
+# add_description_column.py
+import sqlite3
+
+DB_FILE = "13f_data.db" # 파일명 확인!
+
+conn = sqlite3.connect(DB_FILE)
+cursor = conn.cursor()
+
+try:
+    print("🛠️ DB 업그레이드 시작 (description 컬럼 추가)...")
+    cursor.execute("ALTER TABLE institutions ADD COLUMN description TEXT")
+    conn.commit()
+    print("✅ 성공! 'description' 컬럼이 추가되었습니다.")
+except sqlite3.OperationalError as e:
+    print(f"ℹ️ 알림: {e}")
+
+conn.close()
+
+==================================================
+FILE PATH: add_gurus.py
+==================================================
+# add_gurus.py (프로젝트 최상위 폴더에 위치)
+import asyncio
+from app.db.database import SessionLocal
+from app.services.db_service import update_institution_to_db
+
+# 버크셔(버핏), 사이언(버리), 브리지워터(달리오) CIK
+GURU_CIKS = ["0001067983", "0001649339", "0001350694"]
+
+async def init_gurus():
+    print("🚀 [System] 유명 투자자 3인방 데이터를 긴급 공수합니다...")
+    
+    db = SessionLocal()
+    try:
+        for cik in GURU_CIKS:
+            print(f"📥 데이터 수집 시도: CIK {cik}...")
+            # is_featured=True로 설정하여 'Guru' 등급으로 저장
+            await update_institution_to_db(db, cik, is_featured=True)
+            print(f"✅ 수집 완료: {cik}")
+            
+    except Exception as e:
+        print(f"🔥 에러 발생: {e}")
+    finally:
+        db.close()
+        print("🎉 [Complete] 모든 작업이 끝났습니다! 이제 메인 페이지를 새로고침하세요.")
+
+if __name__ == "__main__":
+    asyncio.run(init_gurus())
+
+==================================================
+FILE PATH: create_db.py
+==================================================
+# create_db.py (프로젝트 최상위 폴더)
+from app.db.database import Base, engine
+from app.db.models import Institution, Holding
+
+print("🗄️ 데이터베이스 테이블을 생성합니다...")
+Base.metadata.create_all(bind=engine)
+print("✅ '13f_data.db' 파일이 성공적으로 생성되었습니다!")
+
+==================================================
+FILE PATH: app/__init__.py
+==================================================
+
+
+==================================================
+FILE PATH: app/core/config.py
+==================================================
+
+
+==================================================
+FILE PATH: app/schemas/stock.py
+==================================================
+# app/schemas/stock.py
+from pydantic import BaseModel
+from typing import List, Optional
+
+class Holding(BaseModel):
+    name_of_issuer: str
+    cusip: str
+    value: int
+    shares: int
+    ssh_prnamt_type: str = "SH"
+    change_rate: float = 0.0
+    prev_shares: int = 0
+    
+    # 🚨 [필수 추가] 이 줄이 없어서 에러가 난 겁니다!
+    holding_type: str = "Stock" 
+
+class FilingResponse(BaseModel):
+    cik: str
+    institution_name: str
+    report_date: str
+    holdings: List[Holding]
+
+==================================================
+FILE PATH: app/db/models.py
+==================================================
+# app/db/models.py (최종 수정본)
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Index, BigInteger, Text, Float, Boolean
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from app.db.database import Base
+
+# 1. 기관 (Institution)
+class Institution(Base):
+    __tablename__ = "institutions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cik = Column(String, unique=True, index=True)
+    name = Column(String)
+    report_calendar_or_quarter = Column(String)
+    
+    # 🌟 [필수] VIP 기관 표시 (이게 없어서 아까 에러남)
+    is_featured = Column(Boolean, default=False)
+
+    # 설명 및 AI 요약
+    description = Column(Text, nullable=True)
+    ai_summary = Column(Text, nullable=True)
+    
+    # 관계 설정
+    holdings = relationship("Holding", back_populates="institution")
+
+# 2. 보유 종목 (Holding)
+class Holding(Base):
+    __tablename__ = "holdings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    institution_id = Column(Integer, ForeignKey("institutions.id"))
+    
+    name_of_issuer = Column(String) 
+    name = Column(String)           
+    ticker = Column(String, index=True)
+    
+    cusip = Column(String)
+    value = Column(BigInteger)      
+    shares = Column(BigInteger)     
+    change_rate = Column(Float, nullable=True) 
+    holding_type = Column(String, nullable=True) 
+    
+    institution = relationship("Institution", back_populates="holdings")
+
+# 3. 카드뉴스 (Insight)
+class Insight(Base):
+    __tablename__ = "insights"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String)
+    image_url = Column(String)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+# 4. 피드백 (Feedback)
+class Feedback(Base):
+    __tablename__ = "feedbacks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    content = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+# 5. 방문자 로그 (VisitLog)
+class VisitLog(Base):
+    __tablename__ = "visit_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    ip_address = Column(String)
+    path = Column(String)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+# 6. 종목 요약표 (StockSummary)
+class StockSummary(Base):
+    __tablename__ = "stock_summaries"
+
+    ticker = Column(String, primary_key=True, index=True)
+    name = Column(String)       
+    total_value = Column(BigInteger)
+    holder_count = Column(Integer)   
+    
+    __table_args__ = (
+        Index('idx_stock_summary_name', 'name'),
+    )
+
+==================================================
+FILE PATH: app/db/database.py
+==================================================
+import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
+
+# 1. 환경변수에서 DB 주소 가져오기 (없으면 기존처럼 SQLite 사용)
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./sql_app.db")
+
+# 🚨 Render의 주소는 'postgres://' 로 시작하는데,
+# 파이썬(SQLAlchemy)은 'postgresql://' 로 시작해야 알아듣습니다. (이거 중요!)
+if SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# 2. 엔진 생성 (SQLite vs Postgres 설정 차이 처리)
+if "sqlite" in SQLALCHEMY_DATABASE_URL:
+    engine = create_engine(
+        SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+else:
+    # PostgreSQL은 check_same_thread 옵션이 필요 없습니다.
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+Base = declarative_base()
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+==================================================
+FILE PATH: app/api/v1/endpoints/home.py
+==================================================
+# app/api/v1/endpoints/home.py
+
+from fastapi import APIRouter, Request
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+from pathlib import Path
+from sqlalchemy import desc
+
+from app.db.database import SessionLocal
+from app.db.models import Institution, Holding, Insight  # 👈 Insight 추가!
+
+router = APIRouter()
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent
+TEMPLATE_DIR = BASE_DIR / "app" / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+# 유명한 투자자 CIK 리스트
+GURU_CIKS = ["0001067983", "0001649339", "0001350694"]
+
+@router.get("/")
+async def home(request: Request):
+    db: Session = SessionLocal()
+    try:
+        # 1. Guru 3인방 데이터 가져오기
+        gurus = db.query(Institution).filter(Institution.cik.in_(GURU_CIKS)).all()
+        
+        guru_data = []
+        for guru in gurus:
+            holdings = db.query(Holding).filter(Holding.institution_id == guru.id).order_by(desc(Holding.value)).all()
+            
+            total_value = sum(h.value for h in holdings)
+            if total_value == 0: total_value = 1 
+
+            top_5 = holdings[:5]
+            chart_labels = [h.name for h in top_5]
+            chart_data = [round((h.value / total_value) * 100, 1) for h in top_5]
+            
+            others_value = total_value - sum(h.value for h in top_5)
+            if others_value > 0:
+                chart_labels.append("Others")
+                chart_data.append(round((others_value / total_value) * 100, 1))
+
+            guru_data.append({
+                "name": guru.name,
+                "cik": guru.cik,
+                "labels": chart_labels,
+                "data": chart_data,
+                "total_assets": total_value
+            })
+
+        # 🚨 2. [추가] 최신 인사이트(카드뉴스) 가져오기 (최신순 6개)
+        recent_insights = db.query(Insight).order_by(desc(Insight.created_at)).limit(6).all()
+
+        return templates.TemplateResponse("index.html", {
+            "request": request,
+            "gurus": guru_data,
+            "insights": recent_insights  # 👈 HTML로 배달!
+        })
+    finally:
+        db.close()
+
+==================================================
+FILE PATH: app/api/v1/endpoints/feedback.py
+==================================================
+# app/api/v1/endpoints/feedback.py
+
+from fastapi import APIRouter, Depends, Form
+from sqlalchemy.orm import Session
+from app.db.database import get_db
+from app.db.models import Feedback
+
+router = APIRouter()
+
+@router.post("/send")
+async def send_feedback(
+    content: str = Form(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        new_feedback = Feedback(content=content)
+        db.add(new_feedback)
+        db.commit()
+        return {"status": "success", "message": "소중한 의견 감사합니다! 🙇‍♂️"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+==================================================
+FILE PATH: app/api/v1/endpoints/stock.py
+==================================================
+from pathlib import Path
+from fastapi import APIRouter, Request, HTTPException
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+from sqlalchemy import desc, func
+
+from app.db.database import SessionLocal
+from app.db.models import Institution, Holding
+
+router = APIRouter()
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "app" / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+@router.get("/stock/{ticker}")
+async def stock_detail(request: Request, ticker: str):
+    db: Session = SessionLocal()
+    try:
+        # 🚨 [수정] 대문자 강제 변환 (tsla -> TSLA)
+        target_ticker = ticker.upper().strip()
+
+        holdings = (
+            db.query(
+                Institution.name,
+                Institution.cik,
+                func.sum(Holding.shares).label("shares"),
+                func.sum(Holding.value).label("value")
+            )
+            .join(Holding, Institution.id == Holding.institution_id)
+            .filter(Holding.ticker == target_ticker) # 대문자로 검색
+            .group_by(Institution.id, Institution.name, Institution.cik)
+            .order_by(desc("shares"))
+            .limit(100)
+            .all()
+        )
+        
+        # 데이터가 없어도 에러 페이지 대신 빈 화면이라도 띄워줌
+        if not holdings:
+            return templates.TemplateResponse("stock_detail.html", {
+                "request": request, "ticker": target_ticker, "stock_name": target_ticker, 
+                "holdings": [], "stats": {"total_shares": 0, "total_value": 0, "count": 0}
+            })
+
+        total_shares = sum(h.shares for h in holdings)
+        total_value = sum(h.value for h in holdings)
+        
+        return templates.TemplateResponse("stock_detail.html", {
+            "request": request,
+            "ticker": target_ticker,
+            "stock_name": target_ticker,
+            "holdings": holdings,
+            "stats": {
+                "total_shares": total_shares,
+                "total_value": total_value,
+                "count": len(holdings)
+            }
+        })
+    finally:
+        db.close()
+
+==================================================
+FILE PATH: app/api/v1/endpoints/admin.py
+==================================================
+import asyncio
+import os
+import secrets
+import random
+import gc
+from pathlib import Path
+from fastapi import APIRouter, Request, Depends, HTTPException, status, BackgroundTasks
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+from sqlalchemy import text, desc, func, cast, Date
+from dotenv import load_dotenv
+from datetime import timedelta, datetime
+
+from app.db.database import get_db, SessionLocal
+from app.db.models import Institution, Insight, Feedback, VisitLog, StockSummary, Holding
+from app.services.sec_service import fetch_all_13f_ciks
+from app.services.db_service import update_institution_to_db
+
+load_dotenv()
+router = APIRouter()
+security = HTTPBasic()
+templates = Jinja2Templates(directory="app/templates")
+
+# 🌟 [수정] JP모건, 골드만삭스, 모건스탠리 등 대형 기관 추가!
+TOP_FUNDS = [
+    ("0001067983", "BERKSHIRE HATHAWAY INC"), 
+    ("0001350694", "BRIDGEWATER ASSOCIATES, LP"), 
+    ("0001649339", "SCION ASSET MANAGEMENT, LLC"), 
+    ("000102909", "VANGUARD GROUP INC"),
+    ("0001364742", "BLACKROCK INC"),
+    ("0000019617", "JPMORGAN CHASE & CO"),      # 👈 추가됨!
+    ("0000895421", "MORGAN STANLEY"),           # 👈 추가됨!
+    ("0000886982", "GOLDMAN SACHS GROUP INC"),  # 👈 추가됨!
+    ("0000070858", "BANK OF AMERICA CORP"),     # 👈 추가됨!
+    ("0001166559", "GATES BILL & MELINDA FOUNDATION"),
+    ("0001103804", "Viking Global Investors Lp"),
+    ("0001540531", "TIGER GLOBAL MANAGEMENT LLC"),
+    ("0000902219", "BAILLIE GIFFORD & CO"),
+    ("0001040273", "Citadel Advisors Llc"),
+    ("0001336528", "Pershing Square Capital Management, L.P."),
+    ("0001172435", "ARK INVESTMENT MANAGEMENT LLC"), 
+    ("0001423053", "SOROS FUND MANAGEMENT LLC"),
+    ("0001541617", "Renaissance Technologies Llc"),
+    ("0001569391", "DATAROMA"), 
+]
+
+# ... (인증 함수 get_current_username 등은 기존 유지) ...
+def get_current_username(credentials: HTTPBasicCredentials = Depends(security)):
+    correct_username = os.getenv("ADMIN_USERNAME")
+    correct_password = os.getenv("ADMIN_PASSWORD")
+    if not correct_username or not correct_password:
+         raise HTTPException(status_code=503, detail="서버 보안 설정 오류")
+    
+    is_correct_username = secrets.compare_digest(credentials.username, correct_username)
+    is_correct_password = secrets.compare_digest(credentials.password, correct_password)
+    
+    if not (is_correct_username and is_correct_password):
+        raise HTTPException(status_code=401, detail="관리자 권한 필요", headers={"WWW-Authenticate": "Basic"})
+    return credentials.username
+
+def get_latest_filing_period():
+    now = datetime.utcnow()
+    if now.month < 2 or (now.month == 2 and now.day < 15): return now.year - 1, 3
+    elif now.month < 5 or (now.month == 5 and now.day < 15): return now.year - 1, 4
+    elif now.month < 8 or (now.month == 8 and now.day < 15): return now.year, 1
+    elif now.month < 11 or (now.month == 11 and now.day < 15): return now.year, 2
+    else: return now.year, 3
+
+@router.get("/")
+async def admin_dashboard(request: Request, db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    # ... (대시보드 로직 기존 유지) ...
+    inst_count = db.query(Institution).count()
+    insight_count = db.query(Insight).count()
+    insight_list = db.query(Insight).order_by(desc(Insight.created_at)).all()
+    feedback_list = db.query(Feedback).order_by(desc(Feedback.created_at)).all()
+    
+    today = datetime.utcnow().date()
+    seven_days_ago = today - timedelta(days=6)
+    
+    daily_stats = db.query(cast(VisitLog.timestamp, Date).label('date'), func.count(VisitLog.id).label('count')).filter(VisitLog.timestamp >= seven_days_ago).group_by(cast(VisitLog.timestamp, Date)).order_by(cast(VisitLog.timestamp, Date)).all()
+
+    dates = []
+    counts = []
+    stats_dict = {stat.date: stat.count for stat in daily_stats}
+    for i in range(7):
+        d = seven_days_ago + timedelta(days=i)
+        dates.append(d.strftime("%m-%d"))
+        counts.append(stats_dict.get(d, 0))
+
+    return templates.TemplateResponse("admin_dashboard.html", {
+        "request": request, "username": username, "inst_count": inst_count,
+        "insight_count": insight_count, "insights": insight_list, "feedbacks": feedback_list,
+        "chart_dates": dates, "chart_counts": counts
+    })
+
+# ---------------------------------------------------------
+# 🛠️ [안전 모드] 메모리 관리 강화
+# ---------------------------------------------------------
+async def run_gurus_update():
+    print("🚀 [Admin] 유명 기관(TOP 20) 업데이트 시작...")
+    db = SessionLocal()
+    try:
+        for cik, name in TOP_FUNDS:
+            print(f"🔄 Processing Guru: {name}")
+            existing = db.query(Institution).filter(Institution.cik == cik).first()
+            if not existing:
+                new_inst = Institution(cik=cik, name=name, is_featured=True)
+                db.add(new_inst)
+                db.commit()
+                existing = new_inst
+            
+            await update_institution_to_db(db, cik, is_featured=True)
+            
+            # 🧹 [청소] 메모리 강제 정리
+            existing.ai_summary = None 
+            db.commit()
+            gc.collect() # 램 확보!
+            
+            await asyncio.sleep(2) # 2초 휴식 (천천히)
+
+    except Exception as e:
+        print(f"🔥 Guru Update Failed: {e}")
+    finally:
+        db.close()
+        gc.collect()
+        print("🏁 [Admin] 유명 기관 업데이트 완료")
+
+@router.post("/update/gurus")
+async def update_gurus(background_tasks: BackgroundTasks, username: str = Depends(get_current_username)):
+    background_tasks.add_task(run_gurus_update)
+    return {"status": "success", "message": "TOP 20 기관 업데이트 시작!"}
+
+async def run_crawler_process_all():
+    target_year, target_qtr = get_latest_filing_period()
+    print(f"🏎️ [Admin] 전체 기관 대규모 업데이트 시작... (타겟: {target_year}년 {target_qtr}분기)")
+    
+    db = SessionLocal()
+    try:
+        try:
+            target_ciks = await fetch_all_13f_ciks(target_year, target_qtr)
+        except Exception: return
+
+        total = len(target_ciks)
+        if total == 0: return
+
+        # 🚨 [핵심 수정] 2개 -> 1개로 줄임 (메모리 보호)
+        sem = asyncio.Semaphore(3) 
+
+        async def worker(cik):
+            async with sem:
+                await asyncio.sleep(random.uniform(1.0, 2.0))
+                try:
+                    await update_institution_to_db(db, cik, is_featured=False)
+                    gc.collect() # 🧹 작업 끝날 때마다 청소
+                except Exception: pass
+
+        tasks = [worker(cik) for cik in target_ciks]
+        chunk_size = 50 # 50개 -> 50개로 유지 (DB 부하 감소)
+
+        for i in range(0, total, chunk_size):
+            chunk = tasks[i : i + chunk_size]
+            await asyncio.gather(*chunk)
+            db.commit()
+            print(f"🚀 진행률: {min(i + chunk_size, total)}/{total} 완료")
+            gc.collect() # 🧹 청크 끝날 때마다 대청소
+
+    except Exception as e:
+        print(f"🔥 오류: {e}")
+    finally:
+        db.close()
+        print("🏁 [Admin] 전체 업데이트 종료")
+
+@router.post("/update/all")
+async def update_all(background_tasks: BackgroundTasks, username: str = Depends(get_current_username)):
+    background_tasks.add_task(run_crawler_process_all)
+    return {"status": "success", "message": "⚠️ 안전 모드로 천천히 수집합니다. (메모리 보호)"}
+
+@router.post("/update-search-index")
+async def update_search_index(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    print("🚀 [Admin] 검색 캐시 대규모 업데이트 요청됨...")
+    try:
+        StockSummary.__table__.create(bind=SessionLocal().get_bind(), checkfirst=True)
+        db.query(StockSummary).delete()
+        
+        # 조건 없이 모든 종목 긁어모으기
+        summary_query = (
+            db.query(
+                Holding.ticker,
+                func.max(Holding.name).label("name"),
+                func.sum(Holding.value).label("total_value"),
+                func.count(Holding.institution_id).label("holder_count")
+            )
+            .filter(Holding.ticker != None)
+            .filter(Holding.ticker != "")
+            .group_by(Holding.ticker)
+            .all()
+        )
+        
+        summaries = []
+        for row in summary_query:
+            clean_ticker = row.ticker.strip().upper()
+            clean_name = row.name if row.name else clean_ticker
+
+            if 0 < len(clean_ticker) < 20:
+                summaries.append(StockSummary(
+                    ticker=clean_ticker,
+                    name=clean_name,
+                    total_value=int(row.total_value) if row.total_value else 0,
+                    holder_count=row.holder_count
+                ))
+            
+        db.bulk_save_objects(summaries)
+        db.commit()
+        
+        msg = f"✅ 검색 인덱스 업데이트 완료! (총 {len(summaries)}개 종목)"
+        print(msg)
+        return {"status": "success", "message": msg}
+        
+    except Exception as e:
+        db.rollback()
+        print(f"🔥 업데이트 실패: {e}")
+        return {"status": "error", "message": str(e)}
+
+
+# ... (유지보수 코드는 그대로) ...
+@router.delete("/feedback/{feedback_id}")
+async def delete_feedback(feedback_id: int, db: Session = Depends(get_db)):
+    try:
+        fb = db.query(Feedback).filter(Feedback.id == feedback_id).first()
+        if fb:
+            db.delete(fb)
+            db.commit()
+            return {"status": "success"}
+        return {"status": "error", "message": "Not found"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/reset-cache")
+async def reset_cache(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    try:
+        db.execute(text("UPDATE institutions SET description = NULL, ai_summary = NULL"))
+        db.commit()
+        return {"status": "success", "message": "🧹 초기화 완료"}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@router.post("/fix-names")
+async def fix_names(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    try:
+        ghosts = db.query(Institution).filter((Institution.name == None) | (Institution.name == "")).count()
+        return {"status": "success", "message": f"🔍 누락 데이터: {ghosts}개."}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+    
+@router.post("/update-search-index")
+async def update_search_index(db: Session = Depends(get_db), username: str = Depends(get_current_username)):
+    print("🚀 [Admin] 검색 캐시 대규모 업데이트 요청됨...")
+    try:
+        # 1. 기존 요약 데이터 삭제
+        db.query(StockSummary).delete()
+        
+        # 2. 데이터 재압축 (조건 대폭 완화)
+        # 🚨 [수정] 티커 길이 12자리까지 허용 (JPM, BRK.B, O 등 모두 포함)
+        summary_query = (
+            db.query(
+                Holding.ticker,
+                func.max(Holding.name).label("name"),
+                func.sum(Holding.value).label("total_value"),
+                func.count(Holding.institution_id).label("holder_count")
+            )
+            .filter(Holding.ticker != None)
+            .filter(func.length(Holding.ticker) <= 12) # 👈 5 -> 12로 확장!
+            .group_by(Holding.ticker)
+            .all()
+        )
+        
+        # 3. DB 저장 (안전하게 변환)
+        summaries = []
+        for row in summary_query:
+            # 티커에 묻은 공백 제거 ("JPM " -> "JPM")
+            clean_ticker = row.ticker.strip().upper() if row.ticker else ""
+            
+            if clean_ticker:
+                summaries.append(StockSummary(
+                    ticker=clean_ticker,
+                    name=row.name,
+                    total_value=int(row.total_value) if row.total_value else 0,
+                    holder_count=row.holder_count
+                ))
+            
+        db.bulk_save_objects(summaries)
+        db.commit()
+        
+        msg = f"✅ 검색 인덱스 확장 완료! (총 {len(summaries)}개 종목)"
+        print(msg)
+        return {"status": "success", "message": msg}
+        
+    except Exception as e:
+        db.rollback()
+        print(f"🔥 업데이트 실패: {e}")
+        return {"status": "error", "message": str(e)}
+
+==================================================
+FILE PATH: app/api/v1/endpoints/sec.py
+==================================================
+from fastapi import APIRouter, HTTPException, Request, Depends
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+from sqlalchemy import desc, func
+
+from app.db.database import get_db
+from app.db.models import Institution, Holding
+from app.services.sec_service import fetch_latest_13f
+from app.services.ai_service import analyze_portfolio_by_llm 
+from app.services.wiki_service import get_company_description 
+
+router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
+
+# ==========================================
+# 1. 대시보드 화면 API
+# ==========================================
+@router.get("/dashboard/{cik}")
+async def get_dashboard(request: Request, cik: str, db: Session = Depends(get_db)):
+    try:
+        # 1. 기관 찾기
+        saved_inst = db.query(Institution).filter(Institution.cik == cik).first()
+        
+        if not saved_inst:
+             # error.html이 없으면 500 에러가 나므로, 안전하게 문자열 반환하거나 404 처리
+             raise HTTPException(status_code=404, detail="Institution not found")
+
+        # 위키피디아 검색 로직
+        if not saved_inst.description:
+            print(f"🔍 {saved_inst.name}에 대한 위키피디아 검색 중...")
+            wiki_desc = await get_company_description("", saved_inst.name)
+            
+            if wiki_desc and "찾을 수 없습니다" not in wiki_desc:
+                saved_inst.description = wiki_desc
+                db.commit() 
+                print("✅ 위키 데이터 저장 완료!")
+
+        # 2. 보유 종목 쿼리
+        top_holdings_query = (
+            db.query(
+                Holding.ticker,
+                func.max(Holding.name).label("name"),
+                func.sum(Holding.value).label("value"),
+                func.sum(Holding.shares).label("shares"),
+                func.avg(Holding.change_rate).label("change_rate"),
+                Holding.holding_type
+            )
+            .filter(Holding.institution_id == saved_inst.id)
+            .group_by(Holding.ticker, Holding.holding_type)
+            .order_by(desc(func.sum(Holding.value)))
+            .limit(100)
+            .all()
+        )
+
+        total_assets = db.query(func.sum(Holding.value)).filter(
+            Holding.institution_id == saved_inst.id
+        ).scalar() or 0
+
+        # 🚨 [핵심 수정] Decimal -> int/float 강제 변환
+        # DB에서 가져온 집계 결과(func.sum 등)가 Decimal 타입일 경우 JSON 변환이 안 됩니다.
+        display_holdings = []
+        for h in top_holdings_query:
+            display_holdings.append({
+                "display_name": h.name or "Unknown",
+                "ticker": h.ticker,
+                # 👇 여기가 수정되었습니다 (int, float로 감싸주기)
+                "value": int(h.value) if h.value else 0,
+                "shares": int(h.shares) if h.shares else 0,
+                "change_rate": float(h.change_rate) if h.change_rate else 0.0,
+                "holding_type": h.holding_type,
+            })
+
+        return templates.TemplateResponse("dashboard.html", {
+            "request": request,
+            "cik": cik,
+            "institution_name": saved_inst.name or f"Institution ({cik})",
+            "report_date": "2025-09-30",
+            "holdings": display_holdings,
+            "description": saved_inst.description or "",
+            "total_assets": int(total_assets) # 여기도 int 변환
+        })
+        
+    except Exception as e:
+        print(f"Dashboard Error: {e}")
+        # error.html이 있으면 그걸 보여주고, 없으면 그냥 에러 메시지 출력
+        try:
+            return templates.TemplateResponse("error.html", {"request": request, "message": "데이터 로딩 실패"})
+        except:
+            return {"error": f"Server Error: {str(e)}"}
+
+
+# ==========================================
+# 2. 🤖 AI 분석 API
+# ==========================================
+@router.get("/dashboard/{cik}/ai-analysis")
+async def get_ai_analysis_endpoint(cik: str, db: Session = Depends(get_db)):
+    try:
+        institution = db.query(Institution).filter(Institution.cik == cik).first()
+        if not institution:
+            return {"analysis": "기관 정보를 찾을 수 없습니다."}
+
+        if institution.ai_summary and len(institution.ai_summary) > 10:
+            return {"analysis": institution.ai_summary}
+
+        top_holdings = db.query(Holding)\
+            .filter(Holding.institution_id == institution.id)\
+            .order_by(Holding.value.desc())\
+            .limit(20).all()
+
+        if not top_holdings:
+            return {"analysis": "분석할 보유 종목 데이터가 없습니다."}
+
+        holdings_list = []
+        for h in top_holdings:
+            name = getattr(h, "name", getattr(h, "name_of_issuer", "Unknown"))
+            # 👇 여기도 안전하게 변환
+            change = float(h.change_rate) if h.change_rate is not None else 0.0
+            val = int(h.value) if h.value else 0
+            
+            holdings_list.append({
+                "name_of_issuer": name, 
+                "value": val,
+                "change_rate": change
+            })
+
+        analysis_result = await analyze_portfolio_by_llm(holdings_list, institution.name)
+
+        if analysis_result and "오류" not in analysis_result:
+            institution.ai_summary = analysis_result
+            db.commit()
+
+        return {"analysis": analysis_result}
+
+    except Exception as e:
+        print(f"🔥 AI 분석 에러: {e}")
+        return {"analysis": "현재 AI 분석 서버가 응답하지 않습니다."}
+
+==================================================
+FILE PATH: app/api/v1/endpoints/search.py
+==================================================
+from pathlib import Path
+from fastapi import APIRouter, Request, Query, Depends
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+from sqlalchemy import or_, desc
+
+from app.db.database import get_db
+from app.db.models import Institution, StockSummary
+
+router = APIRouter()
+TEMPLATE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "app" / "templates"
+templates = Jinja2Templates(directory=str(TEMPLATE_DIR))
+
+# 한글 검색어 매핑 (필수 종목들)
+KOREAN_KEYWORD_MAP = {
+    "테슬라": "TSLA", "애플": "AAPL", "마이크로소프트": "MSFT", "엔비디아": "NVDA",
+    "아마존": "AMZN", "구글": "GOOGL", "메타": "META", "넷플릭스": "NFLX", 
+    "삼성": "SAMSUNG", "쿠팡": "CPNG", "티에스엠씨": "TSM",
+    "버크셔": "BRK.B", "코카콜라": "KO", "펩시": "PEP",
+    "제이피모건": "JPM", "모건스탠리": "MS", "리얼티인컴": "O"
+}
+
+@router.get("/search")
+async def search_page(request: Request, q: str = Query("", min_length=1), db: Session = Depends(get_db)):
+    raw_query = q.strip()
+    search_query = KOREAN_KEYWORD_MAP.get(raw_query, raw_query) 
+    ticker_query = search_query.upper()
+
+    try:
+        if not raw_query:
+            return templates.TemplateResponse("search_result.html", {"request": request, "query": "", "institutions": [], "stocks": []})
+
+        # 1. 기관 검색
+        institutions = db.query(Institution).filter(
+            or_(
+                Institution.name.ilike(f"%{raw_query}%"),
+                Institution.name.ilike(f"%{search_query}%")
+            )
+        ).limit(50).all()
+
+        # 2. 종목 검색 (StockSummary 조회)
+        # 이름이나 티커에 검색어가 '포함'만 되어도 다 가져옴
+        stocks = (
+            db.query(
+                StockSummary.name,
+                StockSummary.ticker,
+                StockSummary.total_value,
+                StockSummary.holder_count.label("count") 
+            )
+            .filter(
+                or_(
+                    StockSummary.name.ilike(f"%{raw_query}%"),     
+                    StockSummary.name.ilike(f"%{search_query}%"),  
+                    StockSummary.ticker.ilike(f"%{ticker_query}%") # 앞뒤 어디든 포함되면 OK
+                )
+            )
+            .order_by(desc(StockSummary.total_value)) # 자산 규모 순으로 정렬 (유명한 게 위로)
+            .limit(50)
+            .all()
+        )
+        
+        return templates.TemplateResponse("search_result.html", {
+            "request": request, "query": raw_query, 
+            "institutions": institutions, "stocks": stocks
+        })
+        
+    except Exception as e:
+        print(f"Search Error: {e}")
+        return templates.TemplateResponse("search_result.html", {"request": request, "query": q, "institutions": [], "stocks": []})
+
+# 자동완성 API
+@router.get("/api/v1/search/suggest")
+async def suggest_keywords(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    query = q.strip().upper()
+    
+    tickers = db.query(StockSummary.ticker, StockSummary.name)\
+        .filter(
+            or_(
+                StockSummary.ticker.ilike(f"{query}%"), 
+                StockSummary.name.ilike(f"%{query}%")
+            )
+        )\
+        .order_by(desc(StockSummary.total_value))\
+        .limit(5).all()
+        
+    institutions = db.query(Institution.name)\
+        .filter(Institution.name.ilike(f"%{query}%"))\
+        .limit(5).all()
+
+    results = []
+    for t in tickers: results.append({"name": t.name, "ticker": t.ticker, "type": "stock"})
+    for i in institutions: results.append({"name": i.name, "ticker": None, "type": "institution"})
+        
+    return results
+
+==================================================
+FILE PATH: app/api/v1/endpoints/insights.py
+==================================================
+# app/api/v1/endpoints/insights.py
+
+from fastapi import APIRouter, Depends, File, UploadFile, Form, Request, HTTPException
+from fastapi.templating import Jinja2Templates
+from sqlalchemy.orm import Session
+from app.db.database import get_db
+from app.db.models import Insight
+import shutil
+import os
+import uuid
+
+router = APIRouter()
+templates = Jinja2Templates(directory="app/templates")
+
+UPLOAD_DIR = "app/static/uploads"
+
+# 1. 글쓰기 페이지
+@router.get("/admin/upload")
+async def show_upload_page(request: Request):
+    return templates.TemplateResponse("admin_upload.html", {"request": request})
+
+# 2. 업로드 API
+@router.post("/admin/upload")
+async def upload_insight(
+    title: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    try:
+        file_extension = file.filename.split(".")[-1]
+        unique_filename = f"{uuid.uuid4()}.{file_extension}"
+        file_path = os.path.join(UPLOAD_DIR, unique_filename)
+        
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        web_path = f"/static/uploads/{unique_filename}"
+        
+        new_insight = Insight(title=title, image_url=web_path)
+        db.add(new_insight)
+        db.commit()
+        
+        return {"message": "업로드 성공!", "path": web_path}
+    except Exception as e:
+        return {"error": str(e)}
+
+# 🚨 3. [추가] 삭제 API
+@router.delete("/admin/{insight_id}")
+async def delete_insight(insight_id: int, db: Session = Depends(get_db)):
+    try:
+        # DB에서 찾기
+        insight = db.query(Insight).filter(Insight.id == insight_id).first()
+        if not insight:
+            raise HTTPException(status_code=404, detail="카드를 찾을 수 없습니다.")
+        
+        # 파일 삭제 (청소)
+        # image_url 예시: "/static/uploads/abc.jpg" -> 실제경로 변환 필요
+        if insight.image_url:
+            filename = insight.image_url.split("/")[-1]
+            file_path = os.path.join(UPLOAD_DIR, filename)
+            if os.path.exists(file_path):
+                os.remove(file_path) # 실제 파일 삭제
+        
+        # DB 삭제
+        db.delete(insight)
+        db.commit()
+        
+        return {"status": "success", "message": "삭제되었습니다."}
+        
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+==================================================
+FILE PATH: app/templates/index.html
+==================================================
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    
+    <meta name="description" content="워렌 버핏, 레이 달리오 등 월스트리트 거물들의 최신 주식 포트폴리오(13F)를 분석하고, AI가 요약해주는 투자 정보 서비스입니다.">
+    <meta name="keywords" content="13F, 미국주식, 포트폴리오, 워렌버핏, 투자, 주식분석, Easy13F">
+    <meta property="og:title" content="Easy 13F - 거인들의 어깨에 올라타세요">
+    <meta property="og:description" content="월가 대가들의 13F 공시를 AI가 3줄 요약해드립니다.">
+    <meta property="og:image" content="https://easy13f.com/static/images/og-image.png">
+
+
+    <title>Easy 13F - 월스트리트 투자 거물들의 포트폴리오</title>
+    <meta name="description" content="워런 버핏, 마이클 버리 등 전설적인 투자자들의 최신 주식 포트폴리오(13F)를 분석해 드립니다. 미국 주식 투자 필수 사이트.">
+    <meta name="keywords" content="미국주식, 13F, 워런버핏, 포트폴리오, 주식분석, 버크셔해서웨이, 서학개미">
+    <meta name="author" content="Easy 13F">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://easy13f.onrender.com/">
+    <meta property="og:title" content="월스트리트 거인들은 지금 무엇을 샀을까? 🧐">
+    <meta property="og:description" content="0.1초 만에 확인하는 대가들의 최신 포트폴리오. 지금 바로 확인하세요!">
+    <meta property="og:image" content="https://images.unsplash.com/photo-1611974765270-ca1258634369?q=80&w=1200&auto=format&fit=crop">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    
+    <style>
+        .swiper-button-next, .swiper-button-prev { color: #3B82F6; opacity: 0.7; transition: opacity 0.3s; }
+        .swiper-button-next:hover, .swiper-button-prev:hover { opacity: 1; }
+        @media (max-width: 768px) { .swiper-button-next, .swiper-button-prev { display: none; } }
+        body, div, a, p, h1, h2, h3, span { transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
+    </style>
+
+    <script>
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300">
+
+    <div class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 pb-16 pt-20 px-6 text-center shadow-sm dark:shadow-none">
+        <h1 class="text-4xl md:text-5xl font-extrabold text-gray-900 dark:text-white mb-4 tracking-tight leading-tight">
+            월스트리트의 거인들은<br class="md:hidden" /> 
+            지금 <span class="text-blue-600 dark:text-blue-400 relative inline-block">무엇을 샀을까요?
+                <svg class="absolute w-full h-3 -bottom-1 left-0 text-blue-200 dark:text-blue-900 -z-10" viewBox="0 0 100 10" preserveAspectRatio="none"><path d="M0 5 Q 50 10 100 5" stroke="currentColor" stroke-width="8" fill="none" /></svg>
+            </span> 🧐
+        </h1>
+        <p class="text-gray-500 dark:text-gray-400 mb-10 text-lg">워런 버핏, 마이클 버리 등 전설적인 투자자들의 최신 포트폴리오를 1초 만에 확인하세요.</p>
+
+        <div class="max-w-2xl mx-auto relative z-30"> <div class="absolute -inset-1 bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full blur opacity-20 group-hover:opacity-40 transition duration-500"></div>
+            
+            <form action="/search" method="get" class="relative">
+                <input type="text" id="search-input" name="q" autocomplete="off" 
+                       placeholder="기관명 혹은 종목(티커) 검색 (예: 애플, 버크셔)" 
+                       class="w-full py-4 pl-8 pr-16 rounded-full border-0 shadow-lg text-gray-700 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 focus:ring-2 focus:ring-blue-500 text-lg bg-white dark:bg-gray-700">
+                <button type="submit" class="absolute right-3 top-2.5 bg-blue-600 text-white p-2 rounded-full hover:bg-blue-700 transition shadow-md">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </button>
+            </form>
+
+            <div id="suggestion-list" class="absolute left-0 w-full mt-2 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 overflow-hidden hidden z-50 text-left">
+                </div>
+        </div>
+    </div>
+
+    <main class="max-w-6xl mx-auto px-6 py-16">
+        
+        <div class="mb-24">
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-2">
+                🔥 지금 가장 핫한 투자자
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {% for guru in gurus %}
+                <a href="/api/v1/sec/dashboard/{{ guru.cik }}" class="group bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden">
+                    <div class="text-center mb-6 relative z-10">
+                        <h3 class="text-lg font-bold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition">{{ guru.name }}</h3>
+                        <p class="text-xs text-gray-400 dark:text-gray-500 mt-1 font-medium">운용 자산: <span class="text-blue-600 dark:text-blue-400">${{ "{:,}".format(guru.total_assets) }}</span></p>
+                    </div>
+                    <div class="relative w-40 h-40 mx-auto mb-4">
+                        <canvas id="chart-{{ guru.cik }}"></canvas>
+                        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div class="w-20 h-20 bg-white dark:bg-gray-800 rounded-full transition-colors duration-300"></div>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <span class="text-[10px] font-bold text-gray-400 dark:text-gray-600 uppercase tracking-widest group-hover:text-blue-500 dark:group-hover:text-blue-400 transition">클릭하여 포트폴리오 보기 ➜</span>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if insights %}
+        <div class="mb-10">
+            <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-8 flex items-center gap-2">
+                💡 최신 인사이트
+                <span class="text-xs font-normal text-gray-400 bg-gray-100 dark:bg-gray-700 dark:text-gray-300 px-2 py-1 rounded-full">New Update</span>
+            </h2>
+            
+            <div class="swiper mySwiper !pb-10">
+                <div class="swiper-wrapper">
+                    {% for item in insights %}
+                    <div class="swiper-slide group cursor-pointer p-1">
+                        <div class="relative overflow-hidden rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 mb-4 group-hover:shadow-lg transition-all duration-300">
+                            <img src="{{ item.image_url }}" alt="{{ item.title }}" 
+                                 class="w-full h-auto object-cover transform group-hover:scale-105 transition-transform duration-500">
+                            <a href="{{ item.image_url }}" target="_blank" class="absolute inset-0 z-10"></a>
+                        </div>
+                        
+                        <div class="px-2">
+                            <h3 class="text-xl md:text-2xl font-bold text-gray-900 dark:text-white leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                {{ item.title }}
+                            </h3>
+                            <p class="text-sm text-gray-400 dark:text-gray-500 mt-2 font-medium">
+                                {{ item.created_at.strftime('%Y.%m.%d') }}
+                            </p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="swiper-button-next"></div>
+                <div class="swiper-button-prev"></div>
+            </div>
+        </div>
+        {% endif %}
+
+    </main>
+
+    <footer class="py-10 text-center text-gray-400 dark:text-gray-600 text-xs border-t border-gray-100 dark:border-gray-800 mt-10">
+        &copy; 2026 Easy 13F Analyzer. All rights reserved.
+    </footer>
+
+    <button id="theme-toggle" class="fixed bottom-6 right-6 p-3 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-yellow-400 transition z-50">
+        <svg id="theme-toggle-dark-icon" class="hidden w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+            <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+        </svg>
+        <svg id="theme-toggle-light-icon" class="hidden w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"></path>
+        </svg>
+    </button>
+
+    <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+    <script>
+        // 1. 차트 설정 (기존)
+        const guruData = {{ gurus | tojson | safe }};
+        guruData.forEach(guru => {
+            const ctx = document.getElementById(`chart-${guru.cik}`).getContext('2d');
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: guru.labels,
+                    datasets: [{
+                        data: guru.data,
+                        backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#6366F1', '#EC4899', '#E5E7EB'],
+                        borderWidth: 0,
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '60%',
+                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                    animation: { animateScale: true, animateRotate: true }
+                }
+            });
+        });
+
+        // 2. Swiper 설정 (기존)
+        var swiper = new Swiper(".mySwiper", {
+            slidesPerView: 1.2,
+            spaceBetween: 20,
+            grabCursor: true,
+            navigation: { nextEl: ".swiper-button-next", prevEl: ".swiper-button-prev" },
+            breakpoints: {
+                640: { slidesPerView: 2.2, spaceBetween: 30 },
+                1024: { slidesPerView: 2.5, spaceBetween: 40 }
+            }
+        });
+
+        // 🌑 3. 다크모드 토글 로직 (버튼 동작)
+        var themeToggleBtn = document.getElementById('theme-toggle');
+        var darkIcon = document.getElementById('theme-toggle-dark-icon');
+        var lightIcon = document.getElementById('theme-toggle-light-icon');
+
+        // 현재 상태에 따라 아이콘 표시
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            lightIcon.classList.remove('hidden');
+        } else {
+            darkIcon.classList.remove('hidden');
+        }
+
+        themeToggleBtn.addEventListener('click', function() {
+            // 아이콘 교체
+            darkIcon.classList.toggle('hidden');
+            lightIcon.classList.toggle('hidden');
+
+            // 테마 변경 및 저장
+            if (localStorage.theme === 'dark') {
+                localStorage.theme = 'light';
+                document.documentElement.classList.remove('dark');
+            } else {
+                localStorage.theme = 'dark';
+                document.documentElement.classList.add('dark');
+            }
+        });
+    </script>
+
+    <button onclick="openFeedbackModal()" class="fixed bottom-6 right-20 p-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white shadow-lg border border-transparent transition z-50 flex items-center gap-2 group">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
+        <span class="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-500 ease-in-out whitespace-nowrap text-sm font-bold">의견 보내기</span>
+    </button>
+
+    <div id="feedbackModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-[60] backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-6 transform transition-all scale-95 opacity-0" id="feedbackContent">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white">운영자에게 한마디 📬</h3>
+                <button onclick="closeFeedbackModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <form id="feedbackForm" class="space-y-4">
+                <textarea name="content" rows="4" placeholder="서비스 이용 중 불편한 점이나 추가되었으면 하는 기능이 있다면 자유롭게 적어주세요!" 
+                          class="w-full p-4 rounded-xl border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none"></textarea>
+                
+                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition flex items-center justify-center gap-2">
+                    <span>보내기 🚀</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // ... (기존 차트, Swiper, 다크모드 스크립트 유지) ...
+
+        // 💬 피드백 모달 로직
+        const modal = document.getElementById('feedbackModal');
+        const modalContent = document.getElementById('feedbackContent');
+
+        function openFeedbackModal() {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            // 애니메이션
+            setTimeout(() => {
+                modalContent.classList.remove('scale-95', 'opacity-0');
+                modalContent.classList.add('scale-100', 'opacity-100');
+            }, 10);
+        }
+
+        function closeFeedbackModal() {
+            modalContent.classList.remove('scale-100', 'opacity-100');
+            modalContent.classList.add('scale-95', 'opacity-0');
+            setTimeout(() => {
+                modal.classList.remove('flex');
+                modal.classList.add('hidden');
+            }, 300);
+        }
+
+        // 배경 클릭 시 닫기
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) closeFeedbackModal();
+        });
+
+        // 전송 처리
+        document.getElementById('feedbackForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            
+            try {
+                const res = await fetch('/api/v1/feedback/send', { method: 'POST', body: formData });
+                const data = await res.json();
+                
+                if (data.status === 'success') {
+                    alert(data.message);
+                    e.target.reset();
+                    closeFeedbackModal();
+                } else {
+                    alert('전송 실패: ' + data.message);
+                }
+            } catch (err) {
+                alert('서버 오류 발생');
+            }
+        });
+
+
+        // 🔍 검색 자동완성 로직
+        const searchInput = document.getElementById('search-input');
+        const suggestionList = document.getElementById('suggestion-list');
+        let timer;
+
+        if (searchInput) {
+            searchInput.addEventListener('input', function(e) {
+                clearTimeout(timer);
+                const query = e.target.value.trim();
+
+                // 검색어가 없거나 짧으면 숨김
+                if (query.length < 1) {
+                    suggestionList.classList.add('hidden');
+                    suggestionList.innerHTML = '';
+                    return;
+                }
+
+                // 0.3초 딜레이 후 서버 요청 (서버 부하 방지)
+                timer = setTimeout(() => {
+                    fetch(`/api/v1/search/suggest?q=${query}`)
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.length === 0) {
+                                suggestionList.classList.add('hidden');
+                                return;
+                            }
+
+                            // 목록 HTML 생성
+                            const html = data.map(item => `
+                                <div 
+                                    class="px-6 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0 flex justify-between items-center transition-colors duration-200"
+                                    onclick="location.href='/search?q=${item.ticker || item.name}'"
+                                >
+                                    <div class="flex items-center gap-3">
+                                        <span class="text-xs font-bold px-2 py-1 rounded ${item.type === 'stock' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' : 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300'}">
+                                            ${item.type === 'stock' ? '종목' : '기관'}
+                                        </span>
+                                        <span class="font-medium text-gray-800 dark:text-gray-200">
+                                            ${item.name}
+                                        </span>
+                                    </div>
+                                    ${item.ticker ? `<span class="font-bold text-blue-600 dark:text-blue-400">${item.ticker}</span>` : ''}
+                                </div>
+                            `).join('');
+
+                            suggestionList.innerHTML = html;
+                            suggestionList.classList.remove('hidden');
+                        })
+                        .catch(err => console.error("Search API Error:", err));
+                }, 300);
+            });
+
+            // 검색창 밖을 클릭하면 목록 닫기
+            document.addEventListener('click', function(e) {
+                if (!searchInput.contains(e.target) && !suggestionList.contains(e.target)) {
+                    suggestionList.classList.add('hidden');
+                }
+            });
+            
+            // ESC 키 누르면 닫기
+            searchInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Escape') suggestionList.classList.add('hidden');
+            });
+        }
+    </script>
+</body>
+</html>
+
+==================================================
+FILE PATH: app/templates/admin.html
+==================================================
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Easy 13F Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 flex items-center justify-center h-screen">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg w-96 text-center">
+        <h1 class="text-2xl font-bold mb-2">관리자 모드 🔒</h1>
+        <p class="text-gray-500 mb-6">데이터베이스 업데이트 관리</p>
+
+        <div id="status" class="hidden mb-4 p-3 bg-blue-50 text-blue-600 rounded text-sm">
+            대기 중...
+        </div>
+
+        <button id="updateAllBtn" onclick="triggerUpdateAll()" 
+                class="w-full bg-black text-white py-3 rounded-lg font-bold hover:bg-gray-800 transition">
+            SEC 데이터 전체 최신화 (Update All) 🚀
+        </button>
+
+        <p class="text-xs text-gray-400 mt-4">
+            * 버튼을 누르면 서버가 백그라운드에서<br>데이터를 수집하고 저장합니다.
+        </p>
+    </div>
+
+        <script>
+        async function triggerUpdateAll() {
+            if(!confirm("시간이 오래 걸리는 작업입니다. (약 10~20분)\n터미널 로그를 보며 기다려주세요.\n계속하시겠습니까?")) return;
+
+            // [수정] id로 정확하게 찾기!
+            const btn = document.getElementById("updateAllBtn"); 
+            const status = document.getElementById("status");
+            
+            // btn이 잘 찾아졌는지 확인 (안전장치)
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add("opacity-50", "cursor-not-allowed");
+            }
+
+            status.innerText = "⏳ 전체 수집 중... (터미널 로그 확인)";
+            status.classList.remove("hidden");
+            status.className = "mb-4 p-3 bg-yellow-50 text-yellow-600 rounded text-sm";
+
+            try {
+                // [중요] 주소 뒤에 _all 확인
+                const response = await fetch("/api/v1/admin/update_db_all", { method: "POST" });
+                const result = await response.json();
+                
+                alert("작업이 시작되었습니다! 완료될 때까지 서버를 끄지 마세요.");
+            } catch (error) {
+                status.innerText = "❌ 오류: " + error;
+                status.className = "mb-4 p-3 bg-red-50 text-red-600 rounded text-sm";
+                if (btn) btn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
+
+==================================================
+FILE PATH: app/templates/stock_detail.html
+==================================================
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ ticker }} - Easy 13F</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>tailwind.config = { darkMode: 'class' }</script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+    <script>
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300">
+
+    <header class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 py-4 px-6 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-5xl mx-auto flex items-center gap-4">
+            <a href="/" class="text-xl font-bold hover:text-blue-500 dark:hover:text-blue-400 transition flex items-center gap-2 dark:text-white">Easy 13F 🏠</a>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-6 py-12">
+        <div class="mb-10">
+            <span class="inline-block px-3 py-1 bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 rounded-full text-xs font-bold mb-3">Stock Analysis</span>
+            <h1 class="text-4xl font-extrabold text-gray-900 dark:text-white mb-1 uppercase">{{ ticker }}</h1>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-12">
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">보유 기관 수</div>
+                <div class="text-2xl font-extrabold text-gray-900 dark:text-white">{{ "{:,}".format(stats.count) }} <span class="text-sm font-normal text-gray-400">개</span></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">총 보유 주식 수</div>
+                <div class="text-2xl font-extrabold text-gray-900 dark:text-white truncate" title="{{ stats.total_shares }}">{{ "{:,}".format(stats.total_shares) }} <span class="text-sm font-normal text-gray-400">주</span></div>
+            </div>
+            <div class="bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">총 평가액 (기관 합산)</div>
+                <div class="text-xl md:text-2xl font-extrabold text-green-600 dark:text-green-400 break-all">
+                    ${{ "{:,}".format(stats.total_value * 1000) }}
+                </div>
+            </div>
+        </div>
+
+        <h3 class="text-xl font-bold mb-6 text-gray-900 dark:text-white flex items-center gap-2">
+            🏆 이 주식을 많이 가진 기관 Top 100
+        </h3>
+        
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[500px]">
+                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs text-gray-500 dark:text-gray-400 uppercase border-b border-gray-100 dark:border-gray-600">
+                        <tr>
+                            <th class="px-6 py-4 font-bold">기관명</th>
+                            <th class="px-6 py-4 text-right font-bold">보유 주식 수</th>
+                            <th class="px-6 py-4 text-right font-bold">평가액</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700 text-sm">
+                        {% for h in holdings %}
+                        <tr class="hover:bg-blue-50 dark:hover:bg-gray-700 transition">
+                            <td class="px-6 py-4 font-bold text-gray-900 dark:text-gray-100">
+                                <a href="/api/v1/sec/dashboard/{{ h.cik }}" class="hover:text-blue-500 dark:hover:text-blue-400 block truncate max-w-[200px] md:max-w-none">
+                                    {{ h.name }}
+                                </a>
+                            </td>
+                            <td class="px-6 py-4 text-right text-gray-700 dark:text-gray-300">{{ "{:,}".format(h.shares) }}</td>
+                            <td class="px-6 py-4 text-right font-bold text-gray-900 dark:text-white">${{ "{:,}".format(h.value * 1000) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+</body>
+</html>
+
+==================================================
+FILE PATH: app/templates/admin_upload.html
+==================================================
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>관리자 페이지 - Easy 13F</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+
+    <div class="bg-white p-8 rounded-xl shadow-lg max-w-md w-full">
+        <h1 class="text-2xl font-bold mb-6 text-gray-800">📸 인사이트 업로드</h1>
+        
+        <form id="uploadForm" class="space-y-4">
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">제목 (카드 뉴스 주제)</label>
+                <input type="text" id="title" name="title" placeholder="예: 2025년 3분기 버핏 요약" 
+                       class="w-full border border-gray-300 p-2 rounded focus:outline-none focus:border-blue-500" required>
+            </div>
+
+            <div>
+                <label class="block text-sm font-bold text-gray-700 mb-1">이미지 파일</label>
+                <input type="file" id="file" name="file" accept="image/*" 
+                       class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" required>
+            </div>
+
+            <button type="submit" class="w-full bg-blue-600 text-white py-3 rounded-lg font-bold hover:bg-blue-700 transition">
+                업로드 하기 🚀
+            </button>
+        </form>
+
+        <div id="result" class="mt-4 text-center text-sm font-medium hidden"></div>
+        <a href="/" class="block mt-6 text-center text-gray-400 text-sm hover:text-gray-600">메인으로 돌아가기</a>
+    </div>
+
+    <script>
+        document.getElementById("uploadForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append("title", document.getElementById("title").value);
+            formData.append("file", document.getElementById("file").files[0]);
+
+            const res = await fetch("/api/v1/insights/admin/upload", {
+                method: "POST",
+                body: formData
+            });
+
+            const resultDiv = document.getElementById("result");
+            resultDiv.classList.remove("hidden");
+            
+            if (res.ok) {
+                resultDiv.innerText = "✅ 업로드 완료! 메인 페이지에서 확인하세요.";
+                resultDiv.className = "mt-4 text-center text-sm font-medium text-green-600";
+                setTimeout(() => location.href = "/", 1500); // 1.5초 뒤 메인으로 이동
+            } else {
+                resultDiv.innerText = "🔥 실패했습니다. 다시 시도해주세요.";
+                resultDiv.className = "mt-4 text-center text-sm font-medium text-red-600";
+            }
+        });
+    </script>
+</body>
+</html>
+
+==================================================
+FILE PATH: app/templates/dashboard.html
+==================================================
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ institution_name }} - Easy 13F</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* 다크모드 트랜지션 */
+        body, div, a, p, h1, h2, h3, span, td, th { transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
+    </style>
+    <script>
+        // 초기 테마 적용
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300">
+
+    <header class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 py-3 px-4 md:py-4 md:px-6 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-5xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <a href="/" class="text-lg md:text-xl font-bold hover:text-blue-500 dark:hover:text-blue-400 transition flex items-center gap-1 dark:text-white">
+                    Easy 13F 🏠
+                </a>
+                <span class="text-gray-300 dark:text-gray-600">|</span>
+            </div>
+            <div class="text-xs md:text-sm text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-md">
+                {{ report_date }} 기준
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 py-8 md:px-6 md:py-12">
+        
+        <div class="mb-8 md:mb-10">
+            <div class="inline-block px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full text-xs font-bold mb-3">
+                기관 투자자
+            </div>
+            
+            <h1 class="text-3xl md:text-5xl font-extrabold text-gray-900 dark:text-white leading-tight mb-2 break-keep">
+                {{ institution_name }}
+            </h1>
+            
+            <p class="text-gray-400 dark:text-gray-500 font-medium mb-6 text-sm md:text-base">CIK: {{ cik }}</p>
+
+            <div class="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg border-l-4 border-gray-400 dark:border-gray-600 text-gray-600 dark:text-gray-300 text-sm leading-relaxed max-w-3xl shadow-sm">
+                <span class="font-bold text-gray-800 dark:text-gray-200 block mb-1">🏢 Company Profile</span> 
+                
+                {% if description %}
+                    {{ description }}
+                    <span class="text-xs text-gray-400 dark:text-gray-500 block mt-2">(Source: Wikipedia & AI Translation)</span>
+                {% else %}
+                    <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400 py-2">
+                        <svg class="animate-spin h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span>기업 정보를 불러오는 중입니다... (잠시 후 새로고침 해주세요)</span>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-10">
+            <div class="lg:col-span-2 bg-gradient-to-br from-white to-blue-50 dark:from-gray-800 dark:to-gray-900 rounded-2xl p-6 md:p-8 shadow-sm border border-blue-100 dark:border-gray-700 relative overflow-hidden order-2 lg:order-1">
+                <div class="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-blue-100 dark:bg-blue-900 rounded-full blur-3xl opacity-50 -mr-10 -mt-10"></div>
+                <h2 class="text-base md:text-lg font-bold flex items-center gap-2 mb-4 relative z-10 text-gray-800 dark:text-gray-200">
+                    🤖 AI 애널리스트의 분석
+                </h2>
+                <div id="ai-content" class="prose prose-sm text-gray-700 dark:text-gray-300 bg-white/80 dark:bg-gray-800/80 p-5 rounded-xl border border-blue-50 dark:border-gray-700 backdrop-blur-sm relative z-10 leading-relaxed min-h-[140px] flex items-center justify-center">
+                    <div class="flex flex-col items-center animate-pulse text-blue-400">
+                        <svg class="w-6 h-6 mb-2 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
+                        </svg>
+                        <span class="text-xs md:text-sm font-medium">분석 중...</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-center items-center order-1 lg:order-2">
+                <h3 class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-4 w-full text-left tracking-wide uppercase">
+                    📊 Portfolio Top 5
+                </h3>
+                <div class="relative w-full h-48 sm:h-56">
+                    <canvas id="portfolioChart"></canvas>
+                </div>
+            </div>
+        </div>      
+
+        <h3 class="text-xl md:text-2xl font-bold mb-4 md:mb-6 flex items-center gap-2 text-gray-900 dark:text-white">
+            포트폴리오 Top 100 🔥
+        </h3>
+        
+        <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse min-w-[600px]">
+                    <thead class="bg-gray-50 dark:bg-gray-700 text-xs text-gray-500 dark:text-gray-400 uppercase border-b border-gray-100 dark:border-gray-600">
+                        <tr>
+                            <th class="px-4 py-3 md:px-6 md:py-4 font-bold whitespace-nowrap">종목명 (Ticker)</th>
+                            <th class="px-4 py-3 md:px-6 md:py-4 text-right font-bold whitespace-nowrap">평가액 (USD)</th>
+                            <th class="px-4 py-3 md:px-6 md:py-4 text-right font-bold whitespace-nowrap">변동률</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100 dark:divide-gray-700 text-sm">
+                        {% for stock in holdings %}
+                        <tr class="hover:bg-blue-50 dark:hover:bg-gray-700 transition group">
+                            <td class="px-4 py-4 md:px-6 md:py-5">
+                                <div class="flex flex-col">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm md:text-base font-bold text-gray-900 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition truncate max-w-[150px] md:max-w-none">
+                                            {{ stock.display_name }}
+                                        </span>
+                                        {% if stock.holding_type == 'Put' %}
+                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-200 border border-red-200 dark:border-red-800">PUT</span>
+                                        {% elif stock.holding_type == 'Call' %}
+                                        <span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-200 border border-green-200 dark:border-green-800">CALL</span>
+                                        {% endif %}
+                                    </div>
+                                    <span class="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                                        {{ stock.ticker if stock.ticker else stock.name_of_issuer }}
+                                    </span>
+                                </div>
+                            </td>
+                            <td class="px-4 py-4 md:px-6 md:py-5 text-right font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                ${{ "{:,}".format((stock.value or 0) * 1000) }}
+                            </td>
+                            <td class="px-4 py-4 md:px-6 md:py-5 text-right font-bold text-sm md:text-base whitespace-nowrap">
+                                {% if stock.change_rate is none %}
+                                    <span class="text-gray-400 dark:text-gray-600">-</span>
+                                {% elif stock.change_rate > 0 %}
+                                    <span class="text-red-500 dark:text-red-400 bg-red-50 dark:bg-red-900/30 px-2 py-1 rounded">+{{ stock.change_rate }}%</span>
+                                {% elif stock.change_rate < 0 %}
+                                    <span class="text-blue-500 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">{{ stock.change_rate }}%</span>
+                                {% else %}
+                                    <span class="text-gray-400 dark:text-gray-500">0%</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        {% if not holdings %}
+        <div class="text-center py-20 text-gray-400 dark:text-gray-500 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 mt-4">
+            데이터가 없습니다.
+        </div>
+        {% endif %}
+
+    </main>
+
+    <button id="theme-toggle" class="fixed bottom-6 right-6 p-3 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-yellow-400 transition z-50">
+        <svg id="theme-toggle-dark-icon" class="hidden w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path></svg>
+        <svg id="theme-toggle-light-icon" class="hidden w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"></path></svg>
+    </button>
+
+    <script>
+        // 1. 차트
+        document.addEventListener("DOMContentLoaded", function() {
+            const holdingsRaw = {{ holdings | tojson | safe }}; 
+            if (holdingsRaw && holdingsRaw.length > 0) {
+                const top5 = holdingsRaw.slice(0, 5);
+                const labels = top5.map(item => item.display_name || item.name_of_issuer);
+                const dataValues = top5.map(item => item.value);
+                const ctx = document.getElementById('portfolioChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            data: dataValues,
+                            backgroundColor: ['#3B82F6', '#10B981', '#F59E0B', '#6366F1', '#EC4899'],
+                            borderWidth: 0,
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, padding: 15, font: { size: 11 }, color: document.documentElement.classList.contains('dark') ? '#ccc' : '#666' } } },
+                        cutout: '65%',
+                    }
+                }); 
+            }
+        });
+
+        // 2. AI 분석
+        document.addEventListener("DOMContentLoaded", function() {
+            const cik = "{{ cik }}"; 
+            const contentDiv = document.getElementById("ai-content");
+            fetch(`/api/v1/sec/dashboard/${cik}/ai-analysis`)
+                .then(response => response.json())
+                .then(data => {
+                    contentDiv.innerHTML = data.analysis;
+                    contentDiv.classList.remove("items-center", "justify-center");
+                })
+                .catch(err => {
+                    contentDiv.innerHTML = `<div class="text-center text-red-400 text-sm"><p>분석 실패</p></div>`;
+                });
+        });
+
+        // 3. 다크모드 토글 스크립트
+        var themeToggleBtn = document.getElementById('theme-toggle');
+        var darkIcon = document.getElementById('theme-toggle-dark-icon');
+        var lightIcon = document.getElementById('theme-toggle-light-icon');
+
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            lightIcon.classList.remove('hidden');
+        } else {
+            darkIcon.classList.remove('hidden');
+        }
+
+        themeToggleBtn.addEventListener('click', function() {
+            darkIcon.classList.toggle('hidden');
+            lightIcon.classList.toggle('hidden');
+            if (localStorage.theme === 'dark') {
+                localStorage.theme = 'light';
+                document.documentElement.classList.remove('dark');
+            } else {
+                localStorage.theme = 'dark';
+                document.documentElement.classList.add('dark');
+            }
+        });
+    </script>
+</body>
+</html>
+
+==================================================
+FILE PATH: app/templates/error.html
+==================================================
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>오류 발생 - Easy 13F</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 flex items-center justify-center min-h-screen">
+    <div class="text-center p-8">
+        <div class="text-6xl mb-4">😵</div>
+        <h1 class="text-2xl font-bold mb-2">죄송합니다. 오류가 발생했습니다.</h1>
+        <p class="text-gray-500 dark:text-gray-400 mb-8">{{ message }}</p>
+        
+        <a href="/" class="px-6 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition">
+            홈으로 돌아가기
+        </a>
+    </div>
+</body>
+</html>
+
+==================================================
+FILE PATH: app/templates/admin_dashboard.html
+==================================================
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Easy 13F - Admin Center</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 md:p-10">
+
+    <div class="max-w-6xl mx-auto">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900 flex items-center gap-2">
+                    ⚙️ 관리자 센터 <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full border border-blue-200">Admin</span>
+                </h1>
+                <p class="text-gray-500 mt-1">어서오세요, <strong>{{ username }}</strong>님! 사이트 운영 현황판입니다.</p>
+            </div>
+            <a href="/" class="px-5 py-2.5 bg-white border border-gray-300 rounded-lg text-sm font-bold text-gray-700 hover:bg-gray-100 transition shadow-sm">
+                🏠 메인으로 나가기
+            </a>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">수집된 기관</div>
+                <div class="text-3xl font-extrabold text-blue-600">{{ inst_count }}</div>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">발행된 카드뉴스</div>
+                <div class="text-3xl font-extrabold text-purple-600">{{ insight_count }}</div>
+            </div>
+            <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">대기중 피드백</div>
+                <div class="text-3xl font-extrabold text-red-500">{{ feedbacks|length }}</div>
+            </div>
+             <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+                <div class="text-gray-400 text-xs font-bold uppercase mb-1">총 방문자 (7일)</div>
+                <div class="text-3xl font-extrabold text-green-600">{{ chart_counts | sum }}</div>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-200 mb-8">
+            <h3 class="text-lg font-bold mb-4 text-gray-800 flex items-center gap-2">
+                📉 주간 방문자 추이 <span class="text-xs font-normal text-gray-500">(최근 7일)</span>
+            </h3>
+            <div class="relative h-64 w-full">
+                <canvas id="trafficChart"></canvas>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            
+            <div class="lg:col-span-1 space-y-8">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800 mb-3">📸 콘텐츠 관리</h2>
+                    <a href="/api/v1/insights/admin/upload" class="group bg-white p-5 rounded-xl shadow-sm border border-gray-200 hover:border-blue-500 hover:shadow-md transition cursor-pointer flex items-center gap-4">
+                        <div class="w-12 h-12 bg-blue-50 rounded-full flex items-center justify-center text-2xl group-hover:bg-blue-600 group-hover:text-white transition">📝</div>
+                        <div>
+                            <h3 class="font-bold text-gray-900">인사이트 발행</h3>
+                            <p class="text-xs text-gray-500">새로운 카드뉴스 업로드</p>
+                        </div>
+                    </a>
+                </div>
+
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800 mb-3">📡 데이터 파이프라인</h2>
+                    <div class="space-y-3">
+                        <button onclick="runAction('/admin/update/gurus')" class="w-full text-left group bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:border-indigo-500 hover:shadow-md transition cursor-pointer flex items-center gap-4">
+                            <div class="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center text-lg group-hover:bg-indigo-600 group-hover:text-white transition">⚡️</div>
+                            <div>
+                                <h3 class="font-bold text-gray-900 text-sm">핵심 3대장 업데이트</h3>
+                            </div>
+                        </button>
+                        <button onclick="runAction('/admin/update/all')" class="w-full text-left group bg-white p-4 rounded-xl shadow-sm border border-gray-200 hover:border-orange-500 hover:shadow-md transition cursor-pointer flex items-center gap-4">
+                            <div class="w-10 h-10 bg-orange-50 rounded-full flex items-center justify-center text-lg group-hover:bg-orange-600 group-hover:text-white transition">🐢</div>
+                            <div>
+                                <h3 class="font-bold text-gray-900 text-sm">전체 데이터 수집</h3>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+
+                 <div class="pt-6 border-t border-gray-200">
+                    <h2 class="text-xs font-bold text-gray-400 mb-3 uppercase">Danger Zone</h2>
+                    <div class="flex gap-4">
+                        <button onclick="runAction('/admin/reset-cache')" class="text-xs text-red-500 hover:text-red-700 hover:underline">캐시 초기화</button>
+                        <button onclick="runAction('/admin/fix-names')" class="text-xs text-green-600 hover:text-green-800 hover:underline">데이터 무결성 검사</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="lg:col-span-2 space-y-8">
+                
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center justify-between">
+                        <span>📋 발행된 인사이트</span>
+                        <span class="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded">{{ insights|length }}개</span>
+                    </h2>
+                    
+                    <div class="space-y-2 max-h-[300px] overflow-y-auto pr-2 scrollbar-hide">
+                        {% for item in insights %}
+                        <div class="flex items-center gap-4 p-3 rounded-lg border border-gray-100 hover:bg-gray-50 transition">
+                            <img src="{{ item.image_url }}" class="w-14 h-10 object-cover rounded bg-gray-200">
+                            <div class="flex-1 min-w-0">
+                                <h4 class="font-bold text-gray-800 truncate text-sm">{{ item.title }}</h4>
+                                <p class="text-xs text-gray-400">{{ item.created_at.strftime('%Y-%m-%d') }}</p>
+                            </div>
+                            <button onclick="deleteInsight('{{ item.id }}')" class="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition" title="삭제하기">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                            </button>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-lg">등록된 카드가 없습니다.</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6">
+                    <h2 class="text-lg font-bold text-gray-800 mb-4 flex items-center justify-between">
+                        <span>💌 사용자 피드백</span>
+                        <span class="text-xs bg-red-100 text-red-600 px-2 py-1 rounded-full">{{ feedbacks|length }}건</span>
+                    </h2>
+                    
+                    <div class="space-y-3 max-h-[300px] overflow-y-auto pr-2">
+                        {% for fb in feedbacks %}
+                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-100 group hover:border-blue-200 transition">
+                            <p class="text-gray-800 text-sm whitespace-pre-wrap leading-relaxed">{{ fb.content }}</p>
+                            <div class="mt-2 flex justify-between items-center border-t border-gray-200 pt-2">
+                                <span class="text-xs text-gray-400">{{ fb.created_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                                <button onclick="deleteFeedback('{{ fb.id }}')" class="text-xs text-red-400 hover:text-red-600 font-bold opacity-50 group-hover:opacity-100 transition">
+                                    삭제하기
+                                </button>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-8 text-gray-400 text-sm bg-gray-50 rounded-lg">도착한 피드백이 없습니다.</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <script>
+        // 1. 공통 액션 실행 함수
+        async function runAction(url) {
+            if (!confirm("이 작업을 실행하시겠습니까?")) return;
+            try {
+                const res = await fetch(url, { method: "POST" });
+                if (res.status === 401) { 
+                    alert("세션이 만료되었습니다. 다시 로그인해주세요."); 
+                    location.reload(); 
+                    return; 
+                }
+                const data = await res.json();
+                
+                if (data.status === "success") {
+                    alert("✅ 완료되었습니다.");
+                    location.reload();
+                } else {
+                    alert("🔥 오류 발생: " + data.message);
+                }
+            } catch (err) { 
+                alert("서버 통신 오류: " + err); 
+            }
+        }
+
+        // 2. 인사이트 삭제
+        async function deleteInsight(id) {
+            if (!confirm("정말 이 카드를 삭제하시겠습니까?\n(삭제 후 복구할 수 없습니다)")) return;
+            try {
+                const res = await fetch(`/api/v1/insights/admin/${id}`, { method: "DELETE" });
+                const data = await res.json();
+                if (data.status === "success") {
+                    alert("🗑️ 삭제되었습니다.");
+                    location.reload(); 
+                } else {
+                    alert("오류: " + data.message);
+                }
+            } catch (err) { alert("연결 실패"); }
+        }
+
+        // 3. 피드백 삭제
+        async function deleteFeedback(id) {
+            if (!confirm("확인한 피드백을 삭제하시겠습니까?")) return;
+            try {
+                const res = await fetch(`/api/v1/admin/feedback/${id}`, { method: "DELETE" });
+                const data = await res.json();
+                if (data.status === "success") location.reload();
+            } catch (err) { alert("연결 실패"); }
+        }
+
+        // 4. 차트 초기화 (데이터가 있을 때만 실행)
+        document.addEventListener("DOMContentLoaded", function() {
+            const chartCanvas = document.getElementById('trafficChart');
+            if (chartCanvas) {
+                // Jinja2 변수 주입
+                const dates = {{ chart_dates | tojson }};
+                const counts = {{ chart_counts | tojson }};
+
+                new Chart(chartCanvas.getContext('2d'), {
+                    type: 'line',
+                    data: {
+                        labels: dates,
+                        datasets: [{
+                            label: '방문자 수',
+                            data: counts,
+                            borderColor: '#3B82F6', // Tailwind Blue-500
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.3, // 부드러운 곡선
+                            fill: true,
+                            pointRadius: 4,
+                            pointHoverRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                intersect: false,
+                                mode: 'index',
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: { stepSize: 1 }, // 정수 단위 표시
+                                grid: { color: 'rgba(0, 0, 0, 0.05)' }
+                            },
+                            x: {
+                                grid: { display: false }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>
+
+==================================================
+FILE PATH: app/templates/search_result.html
+==================================================
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>검색 결과 - Easy 13F</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+    <link rel="stylesheet" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css" />
+    <style>body { font-family: "Pretendard Variable", Pretendard, sans-serif; }</style>
+    <style>
+        body, div, a, p, h1, h2, h3, span { transition: background-color 0.3s, color 0.3s, border-color 0.3s; }
+    </style>
+    <script>
+        if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark')
+        } else {
+            document.documentElement.classList.remove('dark')
+        }
+    </script>
+</head>
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-300">
+
+    <div class="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 py-4 px-6 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-5xl mx-auto flex items-center justify-between gap-4">
+            <a href="/" class="text-xl font-bold hover:text-blue-500 dark:hover:text-blue-400 transition flex items-center gap-2 dark:text-white">
+                Easy 13F 🏠
+            </a>
+            
+            <form action="/search" method="get" class="flex-1 max-w-md relative hidden md:block">
+                <input type="text" name="q" value="{{ query }}" placeholder="다른 종목 검색..." 
+                       class="w-full py-2 pl-4 pr-10 rounded-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm focus:outline-none focus:border-blue-500 dark:text-white transition">
+                <button type="submit" class="absolute right-3 top-2 text-gray-400 hover:text-blue-500">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <main class="max-w-5xl mx-auto px-6 py-12">
+        
+        <h1 class="text-2xl md:text-3xl font-bold mb-8 dark:text-white">
+            <span class="text-blue-600 dark:text-blue-400">'{{ query }}'</span> 검색 결과
+        </h1>
+
+
+
+        {% if stocks %}
+        <div>
+            <h2 class="text-lg font-bold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wide flex items-center gap-2">
+                📈 관련 종목 (Stocks) <span class="text-xs bg-gray-100 dark:bg-gray-700 text-gray-500 px-2 py-0.5 rounded-full">{{ stocks|length }}</span>
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for stock in stocks %}
+                <a href="/stock/{{ stock.ticker }}" class="group bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:border-blue-500 hover:shadow-md transition flex flex-col justify-between h-full">
+                    
+                    <div class="flex justify-between items-start mb-3">
+                        <div>
+                            <span class="text-lg font-extrabold text-blue-600 dark:text-blue-400 block">{{ stock.ticker }}</span>
+                            <span class="text-sm font-medium text-gray-600 dark:text-gray-300 line-clamp-1 break-all mr-2" title="{{ stock.name }}">{{ stock.name }}</span>
+                        </div>
+                        <div class="shrink-0 bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300 text-[10px] md:text-xs px-2 py-1 rounded-md font-bold text-center leading-tight">
+                            {{ stock.holder_count }}개 기관<br>보유 중
+                        </div>
+                    </div>
+
+                    <div class="mt-auto pt-4 border-t border-gray-50 dark:border-gray-700">
+                        <div class="text-xs text-gray-400 mb-0.5">총 보유 평가액</div>
+                        <div class="text-base font-bold text-gray-900 dark:text-white">
+                            ${{ "{:,}".format(stock.total_value * 1000) }}
+                        </div>
+                    </div>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if institutions %}
+        <div class="mb-12">
+            <h2 class="text-lg font-bold text-gray-500 dark:text-gray-400 mb-4 uppercase tracking-wide flex items-center gap-2">
+                🏛️ 기관 (Institutions)
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {% for inst in institutions %}
+                <a href="/api/v1/sec/dashboard/{{ inst.cik }}" class="group bg-white dark:bg-gray-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:border-blue-500 hover:shadow-md transition">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded">Institutional Manager</span>
+                        <svg class="w-4 h-4 text-gray-300 group-hover:text-blue-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                    </div>
+                    <h3 class="font-bold text-lg text-gray-900 dark:text-white truncate">{{ inst.name }}</h3>
+                    <p class="text-sm text-gray-400 mt-1">CIK: {{ inst.cik }}</p>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if not institutions and not stocks %}
+        <div class="text-center py-20">
+            <div class="text-6xl mb-4">🌪️</div>
+            <h3 class="text-xl font-bold text-gray-900 dark:text-white">검색 결과가 없습니다.</h3>
+            <p class="text-gray-500 dark:text-gray-400 mt-2">다른 검색어(티커, 기관명)로 다시 시도해보세요.</p>
+        </div>
+        {% endif %}
+
+    </main>
+
+</body>
+</html>
+
+==================================================
+FILE PATH: app/services/stock_service.py
+==================================================
+import yfinance as yf
+from sqlalchemy.orm import Session
+from app.db.models import Holding
+
+# 1. 특정 종목의 현재 주가를 가져오는 함수 (무료)
+def get_stock_price(ticker: str) -> float:
+    try:
+        if not ticker: return 0.0
+        # yfinance를 이용해 주가 조회 (무료)
+        stock = yf.Ticker(ticker)
+        history = stock.history(period="1d")
+        if not history.empty:
+            return float(history['Close'].iloc[-1])
+        return 0.0
+    except Exception:
+        return 0.0
+
+# 2. 전체 보유 종목 주가 업데이트
+async def update_stock_prices(db: Session):
+    print("📈 주가 일괄 업데이트 시작...")
+    try:
+        holdings = db.query(Holding).distinct(Holding.ticker).all()
+        for holding in holdings:
+            if holding.ticker:
+                price = get_stock_price(holding.ticker)
+                if price > 0:
+                    db.query(Holding).filter(Holding.ticker == holding.ticker).update({"current_price": price})
+        db.commit()
+    except Exception as e:
+        print(f"오류: {e}")
+
+==================================================
+FILE PATH: app/services/ai_service.py
+==================================================
+import os
+import httpx
+from dotenv import load_dotenv
+
+load_dotenv()
+
+async def analyze_portfolio_by_llm(holdings: list, institution_name: str) -> str:
+    """
+    [최종 수정] 사용자 계정에서 사용 가능한 'gemini-2.0-flash' 모델을 사용합니다.
+    """
+    try:
+        # 1. API 키 확인
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            return "⚠️ 서버에 GEMINI_API_KEY가 설정되지 않았습니다."
+
+        # 2. 데이터 요약
+        summary_text = ""
+        for h in holdings[:15]: 
+            name = h.get('name_of_issuer', 'Unknown')
+            val = h.get('value', 0)
+            chg = h.get('change_rate', 0)
+            summary_text += f"- {name}: ${val:,} ({chg}%)\n"
+
+        # 3. 프롬프트 작성
+        prompt = f"""
+        당신은 월스트리트의 시니어 퀀트 애널리스트입니다.
+        투자 기관 '{institution_name}'의 최신 포트폴리오를 분석해주세요.
+
+        [데이터]
+        {summary_text}
+
+        [분석 항목]
+        1. 🎯 **투자 테마**: 이 기관의 집중 섹터나 전략 (한 문장)
+        2. 🚀 **주목할 변화**: 눈에 띄는 매수/매도 종목과 그 의도 추론
+        3. 💡 **인사이트**: 개인 투자자가 참고할 점
+        
+        (300자 이내, 친절한 해요체 사용, 마크다운 형식 금지)
+        """
+
+        # 🚨 [핵심 수정] 터미널에서 확인된 'gemini-2.0-flash' 모델 사용
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+        
+        payload = {
+            "contents": [{
+                "parts": [{"text": prompt}]
+            }]
+        }
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload, headers={"Content-Type": "application/json"})
+            
+            if resp.status_code != 200:
+                print(f"🔥 Google API Error: {resp.text}")
+                return f"AI 오류 ({resp.status_code}): 모델명 불일치 또는 권한 문제"
+
+            data = resp.json()
+            try:
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                return text
+            except (KeyError, IndexError):
+                return "AI가 답변을 생성하지 못했습니다."
+
+    except Exception as e:
+        print(f"🔥 AI Request Error: {e}")
+        return f"AI 연결 중 오류 발생: {str(e)[:30]}..."
+
+==================================================
+FILE PATH: app/services/wiki_service.py
+==================================================
+import httpx
+import asyncio
+
+# 🚨 브라우저인 척 속이는 헤더 (필수!)
+WIKI_HEADERS = {
+    "User-Agent": "Easy13F_Project/1.0 (kang203062@gmail.com)",
+    "Accept-Encoding": "gzip, deflate"
+}
+
+async def get_company_description(ticker: str, institution_name: str) -> str:
+    """
+    라이브러리 없이 직접 위키피디아 API를 호출합니다. (가장 빠름)
+    """
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        # 검색어 후보: 기관명 우선, 그 다음 티커
+        queries = [institution_name, f"{institution_name} (company)", ticker]
+        
+        for query in queries:
+            if not query: continue
+            
+            try:
+                # 1. 페이지 제목 찾기
+                search_url = "https://en.wikipedia.org/w/api.php"
+                params = {
+                    "action": "query",
+                    "list": "search",
+                    "srsearch": query,
+                    "format": "json",
+                    "srlimit": 1
+                }
+                
+                resp = await client.get(search_url, params=params, headers=WIKI_HEADERS)
+                data = resp.json()
+                
+                if not data.get("query", {}).get("search"):
+                    continue
+                
+                # 2. 요약 내용 가져오기
+                page_title = data["query"]["search"][0]["title"]
+                summary_url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{page_title}"
+                
+                summary_resp = await client.get(summary_url, headers=WIKI_HEADERS)
+                
+                if summary_resp.status_code == 200:
+                    summary_data = summary_resp.json()
+                    extract = summary_data.get("extract", "")
+                    if extract:
+                        return extract # 성공하면 바로 리턴
+                        
+            except Exception as e:
+                print(f"Wiki Error ({query}): {e}")
+                continue
+
+    return "위키피디아 정보를 찾을 수 없습니다."
+
+==================================================
+FILE PATH: app/services/sec_service.py
+==================================================
+import httpx
+import asyncio
+import pandas as pd
+import xml.etree.ElementTree as ET
+import numpy as np
+import random
+import re
+from app.schemas.stock import Holding, FilingResponse
+from app.services.stock_service import get_stock_price
+
+# 🚨 SEC 차단 방지용 헤더
+USER_AGENT = "Easy13F_Project (admin@easy13f.com)"
+
+HEADERS = {
+    "User-Agent": USER_AGENT,
+    "Accept-Encoding": "gzip, deflate",
+    "Host": "data.sec.gov"
+}
+
+HEADERS_ARCHIVE = {
+    "User-Agent": USER_AGENT,
+    "Accept-Encoding": "gzip, deflate",
+    "Host": "www.sec.gov"
+}
+
+# ---------------------------------------------------------
+# 1. [유틸리티] XML 파싱 (Put/Call 구분 로직 포함)
+# ---------------------------------------------------------
+def get_empty_df():
+    return pd.DataFrame(columns=['name_of_issuer', 'cusip', 'value', 'shares', 'ssh_prnamt_type', 'holding_type'])
+
+def parse_13f_xml_to_dict(xml_content: str) -> list[dict]:
+    holdings = []
+    try:
+        root = ET.fromstring(xml_content)
+        for info in root.findall(".//{*}infoTable"):
+            try:
+                issuer_node = info.find("{*}nameOfIssuer")
+                value_node = info.find("{*}value")
+                shrs_node = info.find("{*}shrsOrPrnAmt")
+                
+                if issuer_node is None or value_node is None: continue
+
+                ssh_amt_node = shrs_node.find("{*}sshPrnamt") if shrs_node is not None else None
+                ssh_type_node = shrs_node.find("{*}sshPrnamtType") if shrs_node is not None else None
+                
+                # CUSIP 확인
+                cusip_node = info.find("{*}cusip")
+                cusip = cusip_node.text if cusip_node is not None else "000000000"
+
+                # 🚨 [복구 완료] Put/Call 옵션 구분 로직
+                put_call_node = info.find("{*}putCall")
+                holding_type = "Stock" # 기본값은 일반 주식
+                
+                if put_call_node is not None and put_call_node.text:
+                    raw_type = put_call_node.text.strip().upper()
+                    if "PUT" in raw_type: 
+                        holding_type = "Put"
+                    elif "CALL" in raw_type: 
+                        holding_type = "Call"
+
+                holdings.append({
+                    "name_of_issuer": issuer_node.text,
+                    "cusip": cusip,
+                    "value": int(value_node.text),
+                    "shares": int(ssh_amt_node.text) if ssh_amt_node is not None else 0,
+                    "ssh_prnamt_type": ssh_type_node.text if ssh_type_node is not None else "SH",
+                    "holding_type": holding_type  # Put/Call/Stock 저장
+                })
+            except: 
+                continue
+    except Exception as e:
+        print(f"⚠️ XML 파싱 실패: {e}")
+    return holdings
+
+async def fetch_holdings_df(client, cik_int, accession_number):
+    try:
+        acc_no_path = accession_number.replace("-", "")
+        index_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_no_path}/index.json"
+        
+        resp = await client.get(index_url, headers=HEADERS_ARCHIVE)
+        if resp.status_code != 200: return get_empty_df()
+        
+        directory_data = resp.json()
+        target_xml = ""
+        for item in directory_data['directory']['item']:
+            name = item['name'].lower()
+            if name.endswith(".xml") and ("infotable" in name or "primary" in name):
+                target_xml = item['name']
+                if "infotable" in name: break 
+        
+        if not target_xml: return get_empty_df()
+        
+        xml_url = f"https://www.sec.gov/Archives/edgar/data/{cik_int}/{acc_no_path}/{target_xml}"
+        xml_resp = await client.get(xml_url, headers=HEADERS_ARCHIVE)
+        if xml_resp.status_code != 200: return get_empty_df()
+
+        raw_data = parse_13f_xml_to_dict(xml_resp.text)
+        if not raw_data: return get_empty_df()
+        
+        return pd.DataFrame(raw_data)
+        
+    except Exception:
+        return get_empty_df()
+
+# ---------------------------------------------------------
+# 2. [기능 A] 전체 기관 명단 가져오기 (Admin용)
+# ---------------------------------------------------------
+async def fetch_all_13f_ciks(year: int, quarter: int) -> list:
+    url = f"https://www.sec.gov/Archives/edgar/full-index/{year}/QTR{quarter}/master.idx"
+    print(f"📡 SEC 명단 다운로드: {url}")
+
+    async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        resp = await client.get(url, headers=HEADERS_ARCHIVE)
+        if resp.status_code != 200: return []
+        
+        content = resp.text
+        ciks = set()
+        for line in content.split('\n'):
+            if "13F-HR" in line:
+                try:
+                    parts = line.split('|')
+                    if len(parts) > 4:
+                        ciks.add(parts[0].strip())
+                except: continue
+        return list(ciks)
+
+# ---------------------------------------------------------
+# 3. [기능 B] 개별 기관 최신 데이터 가져오기 (Put/Call 반영)
+# ---------------------------------------------------------
+async def fetch_latest_13f(cik: str) -> FilingResponse:
+    cik_int = str(int(cik))
+    cik_padded = cik.zfill(10)
+    submission_url = f"https://data.sec.gov/submissions/CIK{cik_padded}.json"
+    
+    async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
+        # 1. 제출 기록
+        resp = await client.get(submission_url, headers=HEADERS)
+        if resp.status_code != 200: raise Exception("SEC API 접속 실패")
+        
+        data = resp.json()
+        institution_name = data.get('name', 'Unknown').title()
+        
+        # 2. 13F-HR 찾기
+        filings = data['filings']['recent']
+        target_filings = []
+        for i, form in enumerate(filings['form']):
+            if form == '13F-HR':
+                target_filings.append({
+                    'date': filings['reportDate'][i],
+                    'acc': filings['accessionNumber'][i]
+                })
+                if len(target_filings) == 2: break
+        
+        if not target_filings: raise Exception("13F 보고서 없음")
+
+        # 3. 데이터 가져오기
+        df_curr = await fetch_holdings_df(client, cik_int, target_filings[0]['acc'])
+        
+        df_prev = pd.DataFrame()
+        if len(target_filings) > 1:
+            await asyncio.sleep(0.5)
+            df_prev = await fetch_holdings_df(client, cik_int, target_filings[1]['acc'])
+
+        # 4. 병합 및 계산
+        final_df = df_curr.copy()
+        if final_df.empty: return FilingResponse(cik=cik, institution_name=institution_name, report_date="", holdings=[])
+
+        if 'change_rate' not in final_df.columns: final_df['change_rate'] = 0.0
+        if 'prev_shares' not in final_df.columns: final_df['prev_shares'] = 0
+
+        if not df_prev.empty:
+            try:
+                # 🚨 [중요] CUSIP과 Holding Type(Put/Call/Stock)을 모두 기준으로 병합
+                merged = pd.merge(
+                    df_curr, 
+                    df_prev[['cusip', 'holding_type', 'shares']], 
+                    on=['cusip', 'holding_type'], # 여기가 핵심!
+                    how='left', 
+                    suffixes=('', '_prev')
+                )
+                merged['prev_shares'] = merged['shares_prev'].fillna(0).astype(int)
+                merged['change_rate'] = np.where(
+                    merged['prev_shares'] > 0,
+                    ((merged['shares'] - merged['prev_shares']) / merged['prev_shares'] * 100),
+                    100.0
+                )
+                merged['change_rate'] = merged['change_rate'].replace([np.inf, -np.inf], 100.0)
+                final_df = merged
+            except: pass
+
+        # 5. 결과 반환
+        holdings_list = []
+        if 'value' in final_df.columns:
+            final_df = final_df.sort_values(by='value', ascending=False)
+        
+        for _, row in final_df.iterrows():
+            try:
+                holdings_list.append(Holding(
+                    name_of_issuer=str(row.get('name_of_issuer', 'Unknown')),
+                    cusip=str(row.get('cusip', '0000')),
+                    ticker=str(row.get('cusip', '0000')),
+                    value=int(row.get('value', 0)),
+                    shares=int(row.get('shares', 0)),
+                    ssh_prnamt_type=str(row.get('ssh_prnamt_type', 'SH')),
+                    change_rate=round(float(row.get('change_rate', 0.0)), 2),
+                    prev_shares=int(row.get('prev_shares', 0)),
+                    holding_type=str(row.get('holding_type', 'Stock')) # Put/Call 값 들어감
+                ))
+            except: continue
+            
+        return FilingResponse(
+            cik=cik,
+            institution_name=institution_name,
+            report_date=target_filings[0]['date'],
+            holdings=holdings_list
+        )
+
+==================================================
+FILE PATH: app/services/ticker_service.py
+==================================================
+# app/services/ticker_service.py
+import httpx
+import re
+import difflib # 👈 파이썬 내장 라이브러리 (설치 필요 없음)
+
+# 1. 수동 매핑 (ETF나 이름이 특이한 것들 강제 지정)
+# SEC 리스트에 없거나 이름이 너무 달라서 못 찾는 것들은 여기에 추가하세요.
+MANUAL_MAP = {
+    "SCION ASSET MANAGEMENT": "SCION", # 마이클 버리 펀드 자체
+    "BERKSHIRE HATHAWAY": "BRK.B",
+    "FACEBOOK": "META",
+    "META PLATFORMS": "META",
+    "GOOGLE": "GOOGL",
+    "ALPHABET": "GOOGL",
+    
+    # 주요 ETF (13F 보고서에 자주 나오지만 SEC 리스트에 없을 수 있음)
+    "SPDR S&P 500 ETF TRUST": "SPY",
+    "INVESCO QQQ TRUST": "QQQ",
+    "ISHARES TRUST": "IVV", # 주의: iShares는 종류가 많아서 부정확할 수 있음
+    "VANGUARD INDEX FUNDS": "VTI",
+    "PROSHARES TRUST": "TQQQ",
+    "VANECK VECTORS ETF TRUST": "SMH",
+    "SPDR GOLD TRUST": "GLD"
+}
+
+# 메모리 캐시
+SEC_TICKER_MAP = {} # { "정제된이름": "TICKER" }
+RAW_NAME_LIST = []  # difflib 검색용 이름 리스트
+
+HEADERS = {
+    "User-Agent": "Easy13F_Analyzer/1.0 (kang203062@gmail.com)",
+    "Accept-Encoding": "gzip, deflate"
+}
+
+async def load_sec_tickers():
+    global SEC_TICKER_MAP, RAW_NAME_LIST
+    url = "https://www.sec.gov/files/company_tickers.json"
+    
+    print("📥 [System] 최신 티커 정보 다운로드 및 인덱싱 중...")
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url, headers=HEADERS, timeout=10.0)
+            if resp.status_code != 200:
+                print("⚠️ 티커 다운로드 실패. 기본 데이터만 사용합니다.")
+                return
+
+            data = resp.json()
+            new_map = {}
+            raw_names = []
+            
+            for key, val in data.items():
+                title = val['title']
+                ticker = val['ticker']
+                
+                # 1. 원본 이름 저장 (검색용)
+                new_map[clean_string(title)] = ticker
+                raw_names.append(clean_string(title))
+            
+            # 수동 맵 병합
+            for name, ticker in MANUAL_MAP.items():
+                clean_k = clean_string(name)
+                new_map[clean_k] = ticker
+                raw_names.append(clean_k)
+
+            SEC_TICKER_MAP = new_map
+            RAW_NAME_LIST = raw_names
+            
+            print(f"✅ [System] {len(SEC_TICKER_MAP)}개 종목 인덱싱 완료! (유사도 검색 준비됨)")
+            
+        except Exception as e:
+            print(f"⚠️ 티커 로드 에러: {e}")
+
+def get_ticker_by_name(raw_name: str) -> str:
+    """
+    3단계 매칭 시스템: 정확 일치 -> 부분 일치 -> 유사도 검색
+    """
+    if not raw_name: return ""
+    
+    # 0. 전처리
+    target = clean_string(raw_name)
+    
+    # 1단계: 정확히 일치하는 경우 (Fast)
+    if target in SEC_TICKER_MAP:
+        return SEC_TICKER_MAP[target]
+    
+    # 2단계: 수동 매핑 확인 (ETF 등)
+    for k, v in MANUAL_MAP.items():
+        if k in target or target in k: # "BERKSHIRE HATHAWAY INC" -> "BERKSHIRE HATHAWAY" 포함
+            return v
+            
+    # 3단계: 유사도 검색 (Slow but Powerful) 🐢
+    # difflib을 사용하여 가장 비슷한 이름 찾기 (유사도 0.8 이상만)
+    matches = difflib.get_close_matches(target, RAW_NAME_LIST, n=1, cutoff=0.85)
+    
+    if matches:
+        best_match = matches[0]
+        # print(f"🔍 [Fuzzy Match] {raw_name} -> {best_match} -> {SEC_TICKER_MAP[best_match]}")
+        return SEC_TICKER_MAP[best_match]
+        
+    return ""
+
+def clean_string(text: str) -> str:
+    if not text: return ""
+    text = text.upper()
+    
+    # 특수문자 제거
+    text = re.sub(r'[^\w\s]', '', text)
+    
+    # 불필요한 법인 식별자 제거 (뒤에서부터 자름)
+    suffixes = [" INC", " CORP", " LTD", " PLC", " SA", " LLC", " LP", " CO", " COMPANY", " LIMITED", " AG", " NV"]
+    for s in suffixes:
+        if text.endswith(s):
+            text = text[:-len(s)]
+            
+    return text.strip()
+
+==================================================
+FILE PATH: app/services/stock_name_service.py
+==================================================
+# app/services/stock_name_service.py
+
+# 자주 쓰이는 종목들의 SEC 이름 -> 사람이 부르는 이름 매핑
+# (실제 서비스에서는 DB나 외부 API를 쓰지만, 여기서는 주요 종목 하드코딩으로 해결)
+TICKER_MAP = {
+    "APPLE INC": ("애플", "AAPL"),
+    "AMERICAN EXPRESS CO": ("아메리칸 익스프레스", "AXP"),
+    "BANK AMER CORP": ("뱅크오브아메리카", "BAC"),
+    "COCA COLA CO": ("코카콜라", "KO"),
+    "CHEVRON CORP NEW": ("쉐브론", "CVX"),
+    "OCCIDENTAL PETE CORP": ("옥시덴탈", "OXY"),
+    "MOODYS CORP": ("무디스", "MCO"),
+    "CHUBB LIMITED": ("처브", "CB"), # 보험사
+    "KRAFT HEINZ CO": ("크래프트 하인즈", "KHC"),
+    "ALPHABET INC": ("구글(알파벳)", "GOOGL"),
+    "DAVITA INC": ("다비타", "DVA"),
+    "KROGER CO": ("크로거", "KR"),
+    "SIRIUS XM HOLDINGS INC": ("시리우스 XM", "SIRI"),
+    "VISA INC": ("비자", "V"),
+    "VERISIGN INC": ("베리사인", "VRSN"),
+    "MASTERCARD INC": ("마스터카드", "MA"),
+    "AMAZON COM INC": ("아마존", "AMZN"),
+}
+
+def normalize_name(sec_name: str) -> tuple[str, str]:
+    """
+    SEC 이름을 받아서 (한글명, 티커) 튜플을 반환합니다.
+    없으면 그냥 (원래이름, '') 반환
+    """
+    # 정확히 일치하는 경우
+    if sec_name in TICKER_MAP:
+        return TICKER_MAP[sec_name]
+    
+    # 부분 일치 (예: AMAZON COM -> 아마존)
+    for key, val in TICKER_MAP.items():
+        if key in sec_name:
+            return val
+            
+    return sec_name.title(), "" # 매핑 없으면 첫글자만 대문자로
+
+==================================================
+FILE PATH: app/services/db_service.py
+==================================================
+# app/services/db_service.py
+from sqlalchemy.orm import Session
+from app.db.models import Institution, Holding
+from app.services.sec_service import fetch_latest_13f
+from app.services.ticker_service import get_ticker_by_name
+
+# 13F 보고서는 Value가 '$1000' 단위입니다. (100,000 = $100M = 1억 달러)
+MIN_ASSETS_THRESHOLD = 100_000 
+
+async def update_institution_to_db(db: Session, cik: str, is_featured: bool = False):
+    try:
+        filing_data = await fetch_latest_13f(cik)
+    except Exception as e:
+        return
+
+    # 1. 자산 규모 필터링
+    total_value = sum(h.value for h in filing_data.holdings)
+    
+    if not is_featured and total_value < MIN_ASSETS_THRESHOLD:
+        print(f"📉 [Drop] {filing_data.institution_name}: ${total_value*1000:,} (기준 미달)")
+        return
+
+    print(f"🔄 [Save] {filing_data.institution_name}: ${total_value*1000:,} (저장 진행)")
+
+    # 2. 기관 저장 (Upsert)
+    inst = db.query(Institution).filter(Institution.cik == cik).first()
+    if not inst:
+        inst = Institution(cik=cik, name=filing_data.institution_name, is_featured=is_featured)
+        db.add(inst)
+        db.commit()
+        db.refresh(inst)
+    else:
+        inst.name = filing_data.institution_name
+        if is_featured: inst.is_featured = True 
+
+    # 3. 보유 종목 업데이트
+    try:
+        # 기존 데이터 삭제
+        db.query(Holding).filter(Holding.institution_id == inst.id).delete()
+        
+        # 🚨 [수정된 부분] 리스트 선언 추가 (이게 없어서 에러 날 예정이었음)
+        new_holdings = [] 
+        
+        for h in filing_data.holdings:
+            found_ticker = get_ticker_by_name(h.name_of_issuer)
+            
+            new_holdings.append(Holding(
+                institution_id=inst.id,
+                name=h.name_of_issuer,
+                ticker=found_ticker,
+                holding_type=h.holding_type, # Put/Call 저장
+                shares=h.shares,
+                value=h.value,
+                change_rate=h.change_rate
+            ))
+        
+        db.add_all(new_holdings)
+        db.commit()
+        
+    except Exception as e:
+        db.rollback()
+        print(f"🔥 저장 실패: {e}")
