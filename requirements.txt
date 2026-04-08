@@ -1,13 +1,10 @@
 fastapi
 uvicorn
 sqlalchemy
-jinja2
 python-dotenv
 requests
 httpx
-psycopg2-binary
+psycopg2-binary==2.9.9
 pandas
 lxml
-python-multipart
 yfinance
-psycopg2-binary==2.9.9
