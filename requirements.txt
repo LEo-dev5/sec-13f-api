@@ -6,5 +6,6 @@ requests
 httpx
 psycopg2-binary==2.9.9
 pandas
+numpy
 lxml
 yfinance

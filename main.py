@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from app.db.database import engine, Base
 from app.api.v1.endpoints import sec, management
+from app.services.ticker_service import load_sec_tickers
 
 is_production = os.getenv("RENDER") is not None
 
@@ -14,6 +15,7 @@ async def lifespan(app: FastAPI):
         Base.metadata.create_all(bind=engine)
     except Exception as e:
         print(f"⚠️ DB 초기화 실패: {e}")
+    await load_sec_tickers()
     yield
     print("👋 [System] 서버 종료")
 
