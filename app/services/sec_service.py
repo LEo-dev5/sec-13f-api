@@ -6,7 +6,6 @@ import numpy as np
 import random
 import re
 from app.schemas.stock import Holding, FilingResponse
-from app.services.stock_service import get_stock_price
 
 # 🚨 SEC 차단 방지용 헤더
 USER_AGENT = "Easy13F_Project (admin@easy13f.com)"
